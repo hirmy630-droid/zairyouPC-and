@@ -71,6 +71,8 @@
         .btn-3d-silver { background: #d4d4d8; border-bottom-color: #71717a; color: #444; }
         .btn-3d-red { background: #dc2626; border-bottom-color: #7f1d1d; }
         .btn-3d-gray { background: #8e8e93; border-bottom-color: #636366; }
+        .btn-3d-darkgray { background: #52525b; border-bottom-color: #3f3f46; }
+        .btn-3d-indigo { background-color: #5E5CE6 !important; border-bottom-color: #3A38B1 !important; }
         
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
@@ -195,7 +197,8 @@
                 trash: <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />,
                 x: <path d="M18 6 6 18M6 6l12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />,
                 plus: <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />,
-                chevron: <path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                chevron: <path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />,
+                backspace: <path d="M21 4H8l-7 8 7 8h13a2 2 0 002-2V6a2 2 0 00-2-2zM18 9l-6 6M12 9l6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             };
             return (
                 <svg width={size} height={size} viewBox="0 0 24 24" className={className} xmlns="http://www.w3.org/2000/svg">
@@ -275,13 +278,13 @@
         const AreaApp = ({ areaStateRef, savedData, setSavedData, showToast }) => {
             const canvasRef = useRef(null);
             const containerRef = useRef(null);
-            const inputRef = useRef(null);
             
             const [areaValue, setAreaValue] = useState('--.--');
             const [slopeInput, setSlopeInput] = useState('');
             const [slopeDeg, setSlopeDeg] = useState('0.0°');
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [modalValue, setModalValue] = useState('');
+            const [isFirstInput, setIsFirstInput] = useState(true);
             
             const s = areaStateRef.current; // 状態アクセス用エイリアス
 
@@ -472,8 +475,33 @@
                 let val = s.activeMode === 'edge' ? s.manualLengths[s.selectedIdx] : s.fixedAngles[s.selectedIdx];
                 if (!val && s.activeMode === 'edge') val = (Math.hypot(s.points[(s.selectedIdx+1)%s.points.length].x-s.points[s.selectedIdx].x, s.points[(s.selectedIdx+1)%s.points.length].y-s.points[s.selectedIdx].y)/s.ppx).toFixed(2);
                 else if (!val && s.isClosed && s.activeMode === 'angle') val = Math.round(getActualAngle(s.selectedIdx) * 10) / 10;
-                setModalValue(val || '');
+                setModalValue(String(val || ''));
+                setIsFirstInput(true);
                 setIsModalOpen(true);
+            };
+
+            const handleNumpadClick = (key) => {
+                if (key === 'BS') {
+                    if (isFirstInput) {
+                        setModalValue('');
+                        setIsFirstInput(false);
+                    } else {
+                        setModalValue(prev => prev.slice(0, -1));
+                    }
+                } else {
+                    setModalValue(prev => {
+                        if (isFirstInput) {
+                            setIsFirstInput(false);
+                            return key === '.' ? '0.' : (key === '00' ? '0' : key);
+                        }
+                        if (key === '.' && prev.includes('.')) return prev;
+                        if (prev === '0') {
+                            if (key === '0' || key === '00') return '0';
+                            if (key !== '.') return key;
+                        }
+                        return prev + key;
+                    });
+                }
             };
 
             const handleModalSave = () => {
@@ -567,25 +595,6 @@
                 const deg = Math.atan(mm / 100) * 180 / Math.PI;
                 setSlopeDeg(deg.toFixed(1) + '°');
             };
-
-            useEffect(() => {
-                if (isModalOpen && inputRef.current) {
-                    const selectNow = () => {
-                        if (inputRef.current) {
-                            inputRef.current.focus();
-                            inputRef.current.select();
-                            try { inputRef.current.setSelectionRange(0, inputRef.current.value.length); } catch (e) {}
-                        }
-                    };
-                    // モバイル端末でのキーボード表示の遅延を考慮して複数回実行
-                    requestAnimationFrame(() => {
-                        selectNow();
-                        setTimeout(selectNow, 0);
-                        setTimeout(selectNow, 60);
-                        setTimeout(selectNow, 180);
-                    });
-                }
-            }, [isModalOpen]);
 
             useEffect(() => {
                 const handleResize = () => {
@@ -753,22 +762,45 @@
                     {isModalOpen && (
                         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm px-4 animate-fade-in">
                             <div className="bg-[#1c1c1e] rounded-[2rem] w-full max-w-sm shadow-2xl border border-white/10 overflow-hidden">
-                                <div className="p-6 flex flex-col gap-5">
-                                    <h2 className="text-xl font-bold text-center text-white">{s.activeMode === 'edge' ? '寸法の入力' : '角度の入力'}</h2>
+                                <div className="p-5 flex flex-col gap-4">
+                                    <h2 className="text-[18px] font-bold text-center text-white">{s.activeMode === 'edge' ? '寸法の入力' : '角度の入力'}</h2>
+                                    
+                                    {/* 擬似入力欄 */}
                                     <div className="relative">
-                                        <input ref={inputRef} type="number" inputMode="decimal" value={modalValue} onChange={(e)=>setModalValue(e.target.value)} className="w-full text-center text-[32px] font-bold bg-[#2c2c2e] text-white h-16 rounded-2xl outline-none focus:ring-2 focus:ring-[#5E5CE6]" placeholder="0.00" autoFocus onClick={(e)=>e.target.select()} />
-                                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 font-bold text-xl pointer-events-none">{s.activeMode === 'edge' ? 'm' : '°'}</span>
+                                        <div className={`w-full text-center text-[32px] font-bold bg-[#2c2c2e] text-white h-16 rounded-2xl flex items-center justify-center overflow-hidden border-2 transition-colors ${isFirstInput ? 'border-[#5E5CE6]' : 'border-transparent'}`}>
+                                            <span className={`transition-all ${isFirstInput && modalValue !== '' ? 'bg-[#5E5CE6] text-white px-3 py-1 rounded-lg' : ''}`}>
+                                                {modalValue || '0'}
+                                            </span>
+                                        </div>
+                                        <span className="absolute right-5 top-1/2 -translate-y-1/2 text-white/30 font-bold text-xl pointer-events-none">{s.activeMode === 'edge' ? 'm' : '°'}</span>
                                     </div>
+                                    
                                     {s.activeMode !== 'edge' && (
                                         <div className="grid grid-cols-3 gap-2">
-                                            <button onClick={()=>setModalValue('90')} className="py-3.5 bg-[#2c2c2e] text-white rounded-xl font-bold btn-3d btn-3d-zinc">90°</button>
-                                            <button onClick={()=>setModalValue('270')} className="py-3.5 bg-[#2c2c2e] text-white rounded-xl font-bold btn-3d btn-3d-zinc">270°</button>
-                                            <button onClick={()=>setModalValue('45')} className="py-3.5 bg-[#2c2c2e] text-white rounded-xl font-bold btn-3d btn-3d-zinc">45°</button>
+                                            <button onClick={() => {setModalValue('90'); setIsFirstInput(false);}} className="py-2 bg-[#2c2c2e] text-white rounded-xl font-bold btn-3d btn-3d-zinc">90°</button>
+                                            <button onClick={() => {setModalValue('270'); setIsFirstInput(false);}} className="py-2 bg-[#2c2c2e] text-white rounded-xl font-bold btn-3d btn-3d-zinc">270°</button>
+                                            <button onClick={() => {setModalValue('45'); setIsFirstInput(false);}} className="py-2 bg-[#2c2c2e] text-white rounded-xl font-bold btn-3d btn-3d-zinc">45°</button>
                                         </div>
                                     )}
-                                    <div className="flex gap-3">
-                                        <button onClick={()=>setIsModalOpen(false)} className="flex-1 h-12 bg-[#2c2c2e] text-white rounded-xl font-bold btn-3d btn-3d-zinc text-[16px]">キャンセル</button>
-                                        <button onClick={handleModalSave} className="flex-1 h-12 bg-[#5E5CE6] text-white rounded-xl font-bold border-b-4 border-[#3A38B1] active:translate-y-[2px] active:border-b-0 text-[16px]">適用</button>
+                                    
+                                    {/* テンキー & コントロール */}
+                                    <div className="flex gap-2">
+                                        {/* テンキー（3列） */}
+                                        <div className="grid grid-cols-3 gap-2 flex-[3]">
+                                            {['7','8','9','4','5','6','1','2','3','0','00','.'].map(key => (
+                                                <button key={key} onClick={() => handleNumpadClick(key)} className="h-14 bg-[#2c2c2e] text-white rounded-xl font-bold text-[24px] btn-3d btn-3d-zinc flex items-center justify-center active:bg-[#3a3a3c] transition-colors">
+                                                    {key}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        {/* 右側アクションボタン */}
+                                        <div className="flex flex-col gap-2 flex-[1]">
+                                            <button onClick={() => handleNumpadClick('BS')} className="flex-1 text-white rounded-xl font-bold btn-3d btn-3d-darkgray flex items-center justify-center">
+                                                <Icon name="backspace" size={20} />
+                                            </button>
+                                            <button onClick={() => setIsModalOpen(false)} className="flex-1 text-white rounded-xl font-bold btn-3d btn-3d-darkgray text-[13px]">ｷｬﾝｾﾙ</button>
+                                            <button onClick={handleModalSave} className="flex-[2] bg-[#5E5CE6] text-white rounded-xl font-bold btn-3d btn-3d-indigo text-[18px]">適用</button>
+                                        </div>
                                     </div>
                                     
                                     {s.activeMode === 'edge' && s.isClosed && (
