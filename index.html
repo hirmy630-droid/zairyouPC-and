@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>材料取り・面積計算 アプリ</title>
+    <title>KYOWA ROOF</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- React & ReactDOM -->
@@ -166,6 +166,16 @@
         }
 
     </style>
+
+    <meta name="theme-color" content="#0b0b0f">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="材料PC">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+
 </head>
 <body class="bg-black flex flex-col h-screen">
     <div id="root" class="flex flex-col flex-1 h-full overflow-hidden"></div>
@@ -278,6 +288,7 @@
         const AreaApp = ({ areaStateRef, savedData, setSavedData, showToast }) => {
             const canvasRef = useRef(null);
             const containerRef = useRef(null);
+            const inputRef = useRef(null);
             
             const [areaValue, setAreaValue] = useState('--.--');
             const [slopeInput, setSlopeInput] = useState('');
@@ -327,6 +338,7 @@
                 const prev = s.points[(idx - 1 + s.points.length) % s.points.length];
                 const curr = s.points[idx];
                 const next = s.points[(idx + 1) % s.points.length];
+                if (!prev || !curr || !next) return 0;
                 const angIn = Math.atan2(curr.y - prev.y, curr.x - prev.x);
                 const angOut = Math.atan2(next.y - curr.y, next.x - curr.x);
                 let turn = angOut - angIn;
@@ -404,6 +416,7 @@
                         const isFixed = s.fixedAngles[i] !== undefined, label = `${isFixed ? s.fixedAngles[i] : Math.round(actualD * 10) / 10}°`;
                         ctx.font = '600 12px sans-serif'; const tw = ctx.measureText(label).width;
                         const pPrev = w2s(s.points[(i - 1 + s.points.length) % s.points.length]), pCurr = w2s(s.points[i]), pNext = w2s(s.points[(i + 1) % s.points.length]);
+                        if (!pPrev || !pCurr || !pNext) return;
                         const v1 = { x: pPrev.x - pCurr.x, y: pPrev.y - pCurr.y }, v2 = { x: pNext.x - pCurr.x, y: pNext.y - pCurr.y };
                         const l1 = Math.hypot(v1.x, v1.y), l2 = Math.hypot(v2.x, v2.y);
                         let mid = { x: v1.x / l1 + v2.x / l2, y: v1.y / l1 + v2.y / l2 };
@@ -459,16 +472,41 @@
 
             const executeUpdate = () => {
                 if (!s.isClosed) { showToast('図形を閉じてから実行してください'); return; }
-                saveState(); const N = s.points.length; let hasManual = false;
+                saveState(); 
+                const N = s.points.length; 
+                let hasManual = false;
+
+                // スケール（ppx）の計算
                 for (let i = 0; i < N; i++) {
                     if (s.manualLengths[i] !== undefined) {
-                        const d = Math.hypot(s.points[(i+1)%N].x - s.points[i].x, s.points[(i+1)%N].y - s.points[i].y); s.ppx = d / s.manualLengths[i]; hasManual = true; break;
+                        const d = Math.hypot(s.points[(i+1)%N].x - s.points[i].x, s.points[i].y - s.points[i].y); 
+                        s.ppx = d / s.manualLengths[i]; 
+                        hasManual = true; 
+                        break;
                     }
                 }
-                if (!hasManual) { const d = Math.hypot(s.points[1].x - s.points[0].x, s.points[1].y - s.points[0].y); s.ppx = d / 10; }
-                for (let i = 0; i < N - 1; i++) if (s.manualLengths[i] === undefined) { const d = Math.hypot(s.points[(i+1)%N].x - s.points[i].x, s.points[(i+1)%N].y - s.points[i].y); s.manualLengths[i] = Math.round((d / s.ppx) * 100) / 100; }
-                for (let i = 1; i < N - 1; i++) if (s.fixedAngles[i] === undefined) { let actualD = getActualAngle(i); if (s.updateCount === 0) { if (Math.abs(actualD - 90) <= 25) s.fixedAngles[i] = 90; else if (Math.abs(actualD - 270) <= 25) s.fixedAngles[i] = 270; else s.fixedAngles[i] = Math.round(actualD * 10) / 10; } else s.fixedAngles[i] = Math.round(actualD * 10) / 10; }
-                s.updateCount++; rebuildGeometry(true); draw(); showToast('作図を更新しました');
+                if (!hasManual) { 
+                    const d = Math.hypot(s.points[1].x - s.points[0].x, s.points[1].y - s.points[0].y); 
+                    s.ppx = d / 10; 
+                }
+
+                // 直角スナップ処理（直角への補正）
+                for (let i = 0; i < N; i++) {
+                    if (s.fixedAngles[i] === undefined) {
+                        let actualD = getActualAngle(i);
+                        // 90度または270度に近い（±25度以内）場合は自動でスナップ固定する
+                        if (Math.abs(actualD - 90) <= 25) {
+                            s.fixedAngles[i] = 90;
+                        } else if (Math.abs(actualD - 270) <= 25) {
+                            s.fixedAngles[i] = 270;
+                        }
+                    }
+                }
+
+                s.updateCount++; 
+                rebuildGeometry(true); 
+                draw(); 
+                showToast('作図を更新しました');
             };
 
             const openModal = () => {
@@ -508,12 +546,14 @@
                 saveState(); const val = parseFloat(modalValue);
                 if (s.activeMode === 'edge') { if (!isNaN(val) && val > 0) s.manualLengths[s.selectedIdx] = val; else delete s.manualLengths[s.selectedIdx]; }
                 else { if (!isNaN(val) && val >= 0) s.fixedAngles[s.selectedIdx] = val; else delete s.fixedAngles[s.selectedIdx]; }
-                setIsModalOpen(false); rebuildGeometry(false); draw();
+                setIsModalOpen(false); 
+                draw();
             };
 
             const exportDrawing = () => {
                 if (s.points.length < 3 || !s.isClosed) { showToast('図形を閉じてから保存してください'); return; }
-                const dataUrl = canvasRef.current.toDataURL('image/png');
+                const canvas = canvasRef.current;
+                const dataUrl = canvas.toDataURL('image/png');
                 const currentState = {
                     points: JSON.parse(JSON.stringify(s.points)),
                     manualLengths: {...s.manualLengths},
@@ -540,7 +580,7 @@
                     return;
                 }
                 
-                saveState(); // 現在の状態を履歴に積んでUndo可能にする
+                saveState();
                 
                 s.points = JSON.parse(JSON.stringify(data.state.points));
                 s.manualLengths = {...data.state.manualLengths};
@@ -654,7 +694,7 @@
                 const onTouchMove = (e) => {
                     if (s.isInteractingWithCanvas && e.touches.length === 2 && s.initialPinchDist) {
                         const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY), nz = Math.max(0.1, Math.min(10, s.initialZoom * (d / s.initialPinchDist))), r = nz / s.zoom;
-                        s.cameraX = s.initialPinchCenter.x - (s.initialPinchCenter.x - s.cameraX) * r; s.cameraY = s.initialPinchCenter.y - (s.initialPinchCenter.y - s.cameraY) * r; s.zoom = nz; draw();
+                        s.cameraX = s.initialPinchCenter.x - (s.initialPinchCenter.x - s.cameraX) * r; s.cameraY = s.initialPinchCenter.y - (s.cameraY) * r; s.zoom = nz; draw();
                         if (e.cancelable) e.preventDefault(); return;
                     }
                     onMove(e);
@@ -1368,6 +1408,7 @@
                                         </div>
 
                                         <div className="space-y-4 pl-1 md:overflow-y-auto scrollbar-hide pb-10">
+                                            {/* 自動集計リスト（上部に配置） */}
                                             {Object.keys(calcSummaryByName).length > 0 && (
                                                 <div className="bg-[#1c1c1e] rounded-[20px] shadow-2xl overflow-hidden border border-[#545458] mb-4">
                                                     <div className="bg-[#2c2c2e] py-1.5 px-4 border-b border-[#545458]">
@@ -1733,5 +1774,14 @@
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
+
+    <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('./sw.js').catch(function (err) { console.log(err); });
+      });
+    }
+    </script>
+
 </body>
 </html>
