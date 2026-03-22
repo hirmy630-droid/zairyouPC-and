@@ -28,7 +28,6 @@
             --ios-text: #ffffff;
             --ios-text-secondary: #8e8e93;
             --ios-separator: #52525b;
-            /* 面積計算用 */
             --safe-top: env(safe-area-inset-top);
             --safe-bottom: env(safe-area-inset-bottom);
         }
@@ -156,7 +155,6 @@
         }
         .alloc-memo-dropdown-item:active { background-color: #3a3a3c; }
 
-        /* 面積計算用の特有スタイル */
         .toast-msg {
             position: fixed; top: 110px; left: 50%; transform: translateX(-50%);
             background: rgba(255,255,255,0.95); color: #000; padding: 14px 24px;
@@ -164,7 +162,6 @@
             box-shadow: 0 10px 24px rgba(0,0,0,0.35); white-space: nowrap; z-index: 1000;
             pointer-events: none; transition: opacity 0.3s ease;
         }
-
     </style>
 
     <meta name="theme-color" content="#0b0b0f">
@@ -284,20 +281,17 @@
             return null;
         };
 
-        // --- 面積計算用コンポーネント (AreaApp) ---
-        const AreaApp = ({ areaStateRef, savedData, setSavedData, showToast }) => {
+        const AreaApp = ({ areaStateRef, savedData, setAreaSavedData, showToast }) => {
             const canvasRef = useRef(null);
             const containerRef = useRef(null);
-            const inputRef = useRef(null);
-            
             const [areaValue, setAreaValue] = useState('--.--');
-            const [slopeInput, setSlopeInput] = useState('');
-            const [slopeDeg, setSlopeDeg] = useState('0.0°');
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [modalValue, setModalValue] = useState('');
             const [isFirstInput, setIsFirstInput] = useState(true);
+            const [slopeInput, setSlopeInput] = useState('');
+            const [slopeDeg, setSlopeDeg] = useState('0.0°');
             
-            const s = areaStateRef.current; // 状態アクセス用エイリアス
+            const s = areaStateRef.current;
 
             const getRawCoords = (e) => {
                 if(!canvasRef.current) return {x:0, y:0};
@@ -413,19 +407,21 @@
                 s.points.forEach((pWorld, i) => {
                     if (s.isClosed) {
                         let actualD = getActualAngle(i);
-                        const isFixed = s.fixedAngles[i] !== undefined, label = `${isFixed ? s.fixedAngles[i] : Math.round(actualD * 10) / 10}°`;
-                        ctx.font = '600 12px sans-serif'; const tw = ctx.measureText(label).width;
+                        const isFixed = s.fixedAngles[i] !== undefined;
+                        let labelAngle = isFixed ? s.fixedAngles[i] : Math.round(actualD * 10) / 10;
+                        let labelColor = isFixed ? '#FF453A' : '#8E8E93';
+                        if (isFixed && Math.abs(actualD - s.fixedAngles[i]) > 3) { labelAngle = Math.round(actualD * 10) / 10; labelColor = '#8E8E93'; }
+                        const label = `${labelAngle}°`; ctx.font = '600 12px sans-serif'; const tw = ctx.measureText(label).width;
                         const pPrev = w2s(s.points[(i - 1 + s.points.length) % s.points.length]), pCurr = w2s(s.points[i]), pNext = w2s(s.points[(i + 1) % s.points.length]);
                         if (!pPrev || !pCurr || !pNext) return;
                         const v1 = { x: pPrev.x - pCurr.x, y: pPrev.y - pCurr.y }, v2 = { x: pNext.x - pCurr.x, y: pNext.y - pCurr.y };
                         const l1 = Math.hypot(v1.x, v1.y), l2 = Math.hypot(v2.x, v2.y);
                         let mid = { x: v1.x / l1 + v2.x / l2, y: v1.y / l1 + v2.y / l2 };
                         if (Math.hypot(mid.x, mid.y) < 0.001) mid = { x: -v1.y, y: v1.x };
-                        let bisectorAngle = Math.atan2(mid.y, mid.x);
-                        if (actualD > 180) bisectorAngle += Math.PI;
+                        let bisectorAngle = Math.atan2(mid.y, mid.x); if (actualD > 180) bisectorAngle += Math.PI;
                         const tx = pCurr.x + Math.cos(bisectorAngle) * 42, ty = pCurr.y + Math.sin(bisectorAngle) * 42;
                         ctx.fillStyle = 'rgba(28, 28, 30, 0.9)'; ctx.beginPath(); ctx.roundRect(tx - tw / 2 - 5, ty - 10, tw + 10, 20, 5); ctx.fill();
-                        ctx.fillStyle = isFixed ? '#FF453A' : '#8E8E93'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, tx, ty);
+                        ctx.fillStyle = labelColor; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, tx, ty);
                     }
                 });
                 s.points.forEach((pWorld, i) => {
@@ -451,92 +447,52 @@
 
             const rotateDrawing = (deg = 90) => {
                 if (!s.points.length) return;
-                saveState();
-                const rad = deg * Math.PI / 180;
-                let cx = 0, cy = 0;
-                s.points.forEach(p => { cx += p.x; cy += p.y; });
-                cx /= s.points.length; cy /= s.points.length;
+                saveState(); const rad = deg * Math.PI / 180; let cx = 0, cy = 0; s.points.forEach(p => { cx += p.x; cy += p.y; }); cx /= s.points.length; cy /= s.points.length;
                 s.points = s.points.map(p => {
                     const dx = p.x - cx, dy = p.y - cy;
                     return { x: cx + dx * Math.cos(rad) - dy * Math.sin(rad), y: cy + dx * Math.sin(rad) + dy * Math.cos(rad) };
                 });
-                s.globalBaseAngle += rad;
-                draw();
-                if (s.isClosed) showToast('図を回転しました');
+                s.globalBaseAngle += rad; draw(); if (s.isClosed) showToast('図を回転しました');
             };
 
             const resetDrawing = () => {
-                saveState(); s.points = []; s.manualLengths = {}; s.fixedAngles = {}; s.isClosed = false; s.updateCount = 0; 
+                saveState(); s.points = []; s.manualLengths = {}; s.fixedAngles = {}; s.isClosed = false; s.updateCount = 0;
                 s.cameraX = 0; s.cameraY = 0; s.zoom = 1; setAreaValue('--.--'); draw();
             };
 
             const executeUpdate = () => {
                 if (!s.isClosed) { showToast('図形を閉じてから実行してください'); return; }
-                saveState(); 
-                const N = s.points.length; 
-                let hasManual = false;
-
-                // スケール（ppx）の計算
+                saveState(); const N = s.points.length; let hasManual = false;
                 for (let i = 0; i < N; i++) {
                     if (s.manualLengths[i] !== undefined) {
-                        const d = Math.hypot(s.points[(i+1)%N].x - s.points[i].x, s.points[i].y - s.points[i].y); 
-                        s.ppx = d / s.manualLengths[i]; 
-                        hasManual = true; 
-                        break;
+                        const p1 = s.points[i], p2 = s.points[(i + 1) % N], d = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+                        if (d > 0) { s.ppx = d / s.manualLengths[i]; hasManual = true; break; }
                     }
                 }
-                if (!hasManual) { 
-                    const d = Math.hypot(s.points[1].x - s.points[0].x, s.points[1].y - s.points[0].y); 
-                    s.ppx = d / 10; 
-                }
-
-                // 直角スナップ処理（直角への補正）
                 for (let i = 0; i < N; i++) {
                     if (s.fixedAngles[i] === undefined) {
                         let actualD = getActualAngle(i);
-                        // 90度または270度に近い（±25度以内）場合は自動でスナップ固定する
-                        if (Math.abs(actualD - 90) <= 25) {
-                            s.fixedAngles[i] = 90;
-                        } else if (Math.abs(actualD - 270) <= 25) {
-                            s.fixedAngles[i] = 270;
-                        }
+                        if (Math.abs(actualD - 90) <= 10) s.fixedAngles[i] = 90;
+                        else if (Math.abs(actualD - 270) <= 10) s.fixedAngles[i] = 270;
                     }
                 }
-
-                s.updateCount++; 
-                rebuildGeometry(true); 
-                draw(); 
-                showToast('作図を更新しました');
+                s.updateCount++; rebuildGeometry(true); draw(); showToast('作図を更新しました');
             };
 
             const openModal = () => {
                 let val = s.activeMode === 'edge' ? s.manualLengths[s.selectedIdx] : s.fixedAngles[s.selectedIdx];
                 if (!val && s.activeMode === 'edge') val = (Math.hypot(s.points[(s.selectedIdx+1)%s.points.length].x-s.points[s.selectedIdx].x, s.points[(s.selectedIdx+1)%s.points.length].y-s.points[s.selectedIdx].y)/s.ppx).toFixed(2);
                 else if (!val && s.isClosed && s.activeMode === 'angle') val = Math.round(getActualAngle(s.selectedIdx) * 10) / 10;
-                setModalValue(String(val || ''));
-                setIsFirstInput(true);
-                setIsModalOpen(true);
+                setModalValue(String(val || '')); setIsFirstInput(true); setIsModalOpen(true);
             };
 
             const handleNumpadClick = (key) => {
-                if (key === 'BS') {
-                    if (isFirstInput) {
-                        setModalValue('');
-                        setIsFirstInput(false);
-                    } else {
-                        setModalValue(prev => prev.slice(0, -1));
-                    }
-                } else {
+                if (key === 'BS') { if (isFirstInput) { setModalValue(''); setIsFirstInput(false); } else { setModalValue(prev => prev.slice(0, -1)); } }
+                else {
                     setModalValue(prev => {
-                        if (isFirstInput) {
-                            setIsFirstInput(false);
-                            return key === '.' ? '0.' : (key === '00' ? '0' : key);
-                        }
+                        if (isFirstInput) { setIsFirstInput(false); return key === '.' ? '0.' : (key === '00' ? '0' : key); }
                         if (key === '.' && prev.includes('.')) return prev;
-                        if (prev === '0') {
-                            if (key === '0' || key === '00') return '0';
-                            if (key !== '.') return key;
-                        }
+                        if (prev === '0') { if (key === '0' || key === '00') return '0'; if (key !== '.') return key; }
                         return prev + key;
                     });
                 }
@@ -546,131 +502,79 @@
                 saveState(); const val = parseFloat(modalValue);
                 if (s.activeMode === 'edge') { if (!isNaN(val) && val > 0) s.manualLengths[s.selectedIdx] = val; else delete s.manualLengths[s.selectedIdx]; }
                 else { if (!isNaN(val) && val >= 0) s.fixedAngles[s.selectedIdx] = val; else delete s.fixedAngles[s.selectedIdx]; }
-                setIsModalOpen(false); 
-                draw();
+                setIsModalOpen(false); draw();
             };
 
             const exportDrawing = () => {
                 if (s.points.length < 3 || !s.isClosed) { showToast('図形を閉じてから保存してください'); return; }
-                const canvas = canvasRef.current;
-                const dataUrl = canvas.toDataURL('image/png');
-                const currentState = {
-                    points: JSON.parse(JSON.stringify(s.points)),
-                    manualLengths: {...s.manualLengths},
-                    fixedAngles: {...s.fixedAngles},
-                    isClosed: s.isClosed,
-                    ppx: s.ppx,
-                    globalBaseAngle: s.globalBaseAngle,
-                    globalIsCW: s.globalIsCW,
-                    updateCount: s.updateCount,
-                    cameraX: s.cameraX,
-                    cameraY: s.cameraY,
-                    zoom: s.zoom
-                };
+                const canvas = canvasRef.current, dataUrl = canvas.toDataURL('image/png');
+                const currentState = { points: JSON.parse(JSON.stringify(s.points)), manualLengths: {...s.manualLengths}, fixedAngles: {...s.fixedAngles}, isClosed: s.isClosed, ppx: s.ppx, globalBaseAngle: s.globalBaseAngle, globalIsCW: s.globalIsCW, updateCount: s.updateCount, cameraX: s.cameraX, cameraY: s.cameraY, zoom: s.zoom };
                 const newData = { img: dataUrl, area: areaValue, time: new Date().toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }), memo: '', state: currentState };
-                setSavedData([...savedData, newData]);
-                showToast('保存しました');
+                setAreaSavedData([...savedData, newData]); showToast('保存しました');
             };
 
             const loadHistoryItem = (idx) => {
-                const data = savedData[idx];
-                if (!data) return;
-                if (!data.state) {
-                    showToast('古いデータのため再編集できません');
-                    return;
-                }
-                
+                const data = savedData[idx]; if (!data) return;
+                if (!data.state) { showToast('古いデータのため再編集できません'); return; }
                 saveState();
-                
-                s.points = JSON.parse(JSON.stringify(data.state.points));
-                s.manualLengths = {...data.state.manualLengths};
-                s.fixedAngles = {...data.state.fixedAngles};
-                s.isClosed = data.state.isClosed;
-                s.ppx = data.state.ppx;
-                s.globalBaseAngle = data.state.globalBaseAngle;
-                s.globalIsCW = data.state.globalIsCW;
-                s.updateCount = data.state.updateCount || 0;
-                s.cameraX = data.state.cameraX || 0;
-                s.cameraY = data.state.cameraY || 0;
-                s.zoom = data.state.zoom || 1;
-                
-                rebuildGeometry(false);
-                draw();
-                showToast('データを読み込みました');
+                s.points = JSON.parse(JSON.stringify(data.state.points)); s.manualLengths = {...data.state.manualLengths}; s.fixedAngles = {...data.state.fixedAngles}; s.isClosed = data.state.isClosed; s.ppx = data.state.ppx; s.globalBaseAngle = data.state.globalBaseAngle; s.globalIsCW = data.state.globalIsCW; s.updateCount = data.state.updateCount || 0; s.cameraX = data.state.cameraX || 0; s.cameraY = data.state.cameraY || 0; s.zoom = data.state.zoom || 1;
+                rebuildGeometry(false); draw(); showToast('データを読み込みました');
             };
 
-            const updateMemo = (idx, val) => {
-                const newData = [...savedData];
-                newData[idx].memo = val;
-                setSavedData(newData);
-            };
-            const deleteHistoryItem = (idx) => {
-                const newData = [...savedData];
-                newData.splice(idx, 1);
-                setSavedData(newData);
-                showToast('削除しました');
-            };
-
-            const calcEdgeInfo = () => {
-                if (!s.isClosed || s.activeMode !== 'edge') return { relDeg: 0, edgeSlopeH: '0.0', edgeTotalDrop: 0 };
+            const updateMemo = (idx, val) => { const newData = [...savedData]; newData[idx].memo = val; setAreaSavedData(newData); };
+            const deleteHistoryItem = (idx) => { const newData = [...savedData]; newData.splice(idx, 1); setAreaSavedData(newData); showToast('削除しました'); };
+            
+            const edgeInfo = useMemo(() => {
+                if (!s.isClosed || s.activeMode !== 'edge' || s.selectedIdx === -1) return { relDeg: 0, edgeSlopeH: '0.0', edgeTotalDrop: 0 };
                 const p1 = s.points[s.selectedIdx], p2 = s.points[(s.selectedIdx+1)%s.points.length];
                 if(!p1 || !p2) return { relDeg: 0, edgeSlopeH: '0.0', edgeTotalDrop: 0 };
-                const dx = p2.x-p1.x, dy = p2.y-p1.y, cos = Math.cos(-s.globalBaseAngle), sin = Math.sin(-s.globalBaseAngle);
-                const ldx = dx*cos-dy*sin, ldy = dx*sin+dy*cos;
-                let relDeg = Math.abs(Math.atan2(ldy, ldx) * 180 / Math.PI) % 180;
-                if (relDeg > 90) relDeg = 180 - relDeg;
-                
-                const currentL = parseFloat(modalValue) || 0;
+                const dx = p2.x-p1.x, dy = p2.y-p1.y, cos = Math.cos(-s.globalBaseAngle), sin = Math.sin(-s.globalBaseAngle), ldx = dx*cos-dy*sin, ldy = dx*sin+dy*cos;
+                let relDeg = Math.abs(Math.atan2(ldy, ldx) * 180 / Math.PI) % 180; if (relDeg > 90) relDeg = 180 - relDeg;
+                const currentL = parseFloat(modalValue) || (Math.hypot(p2.x-p1.x, p2.y-p1.y)/s.ppx);
                 let edgeSlopeH = '0.0', edgeTotalDrop = 0;
                 if (relDeg > 89.5 || relDeg < 0.5) { edgeSlopeH = '0.0'; edgeTotalDrop = 0; }
                 else if (relDeg <= 45) { edgeSlopeH = (100 * Math.tan(relDeg * Math.PI / 180)).toFixed(1); edgeTotalDrop = Math.round(currentL * Math.sin(relDeg * Math.PI / 180) * 1000); }
                 else { edgeSlopeH = (100 / Math.tan(relDeg * Math.PI / 180)).toFixed(1); edgeTotalDrop = Math.round(currentL * Math.cos(relDeg * Math.PI / 180) * 1000); }
                 return { relDeg, edgeSlopeH, edgeTotalDrop };
-            };
+            }, [s.isClosed, s.activeMode, s.selectedIdx, s.points, s.globalBaseAngle, modalValue, s.ppx]);
 
-            const handleSlopeChange = (val) => {
-                setSlopeInput(val);
-                const mm = parseFloat(val);
-                if (isNaN(mm) || mm <= 0) { setSlopeDeg('0.0°'); return; }
-                const deg = Math.atan(mm / 100) * 180 / Math.PI;
-                setSlopeDeg(deg.toFixed(1) + '°');
-            };
+            const handleSlopeChange = (val) => { setSlopeInput(val); const mm = parseFloat(val); if (isNaN(mm) || mm <= 0) { setSlopeDeg('0.0°'); return; } const deg = Math.atan(mm / 100) * 180 / Math.PI; setSlopeDeg(deg.toFixed(1) + '°'); };
 
             useEffect(() => {
-                const handleResize = () => {
-                    if (canvasRef.current && containerRef.current) {
-                        canvasRef.current.width = containerRef.current.clientWidth;
-                        canvasRef.current.height = containerRef.current.clientHeight;
-                        draw();
-                    }
-                };
-                window.addEventListener('resize', handleResize);
-                handleResize(); setTimeout(handleResize, 100);
-                
-                const canvas = canvasRef.current;
-                if (!canvas) return;
-
+                const handleResize = () => { if (canvasRef.current && containerRef.current) { canvasRef.current.width = containerRef.current.clientWidth; canvasRef.current.height = containerRef.current.clientHeight; draw(); } };
+                window.addEventListener('resize', handleResize); handleResize(); setTimeout(handleResize, 100);
+                const canvas = canvasRef.current; if (!canvas) return;
                 const onStart = (e) => {
-                    s.isInteractingWithCanvas = true;
-                    const raw = getRawCoords(e); s.lastRawPos = raw; s.startRawPos = {x: raw.x, y: raw.y}; s.hasMoved = false;
-                    if (e.cancelable) e.preventDefault(); s.isPanning = true;
+                    s.isInteractingWithCanvas = true; const raw = getRawCoords(e); s.lastRawPos = raw; s.startRawPos = {x: raw.x, y: raw.y}; s.hasMoved = false; if (e.cancelable) e.preventDefault(); s.isPanning = true;
                 };
                 const onMove = (e) => {
                     if (!s.isInteractingWithCanvas || !s.isPanning) return;
                     const raw = getRawCoords(e); if (e.cancelable) e.preventDefault();
                     if (Math.hypot(raw.x - s.startRawPos.x, raw.y - s.startRawPos.y) > 5) s.hasMoved = true;
+                    if (!s.isClosed) return;
                     if (s.isClosed && s.hasMoved) { s.cameraX += raw.x - s.lastRawPos.x; s.cameraY += raw.y - s.lastRawPos.y; s.lastRawPos = raw; draw(); }
                 };
                 const onEnd = () => {
-                    if (!s.isInteractingWithCanvas) return;
-                    s.isInteractingWithCanvas = false; s.isPanning = false;
+                    if (!s.isInteractingWithCanvas) return; s.isInteractingWithCanvas = false; s.isPanning = false;
                     if (!s.hasMoved) {
-                        const raw = s.startRawPos;
-                        if (!s.isClosed) {
-                            saveState();
-                            if (s.points.length >= 3 && Math.hypot(raw.x - w2s(s.points[0]).x, raw.y - w2s(s.points[0]).y) < 50) finalizeDrawing();
-                            else { s.points.push(s2w(raw)); draw(); }
-                            return;
+                        let raw = s.startRawPos;
+                        if (!s.isClosed) { 
+                            saveState(); 
+                            if (s.points.length >= 3 && Math.hypot(raw.x - w2s(s.points[0]).x, raw.y - w2s(s.points[0]).y) < 50) {
+                                finalizeDrawing();
+                            } else {
+                                if (s.points.length > 0) {
+                                    const lastP = w2s(s.points[s.points.length - 1]);
+                                    let dx = raw.x - lastP.x;
+                                    let dy = raw.y - lastP.y;
+                                    if (Math.abs(dx) < 30) dx = 0;
+                                    else if (Math.abs(dy) < 30) dy = 0;
+                                    raw = { x: lastP.x + dx, y: lastP.y + dy };
+                                }
+                                s.points.push(s2w(raw)); 
+                                draw(); 
+                            } 
+                            return; 
                         }
                         let hitType = null, hitIdx = -1, minDist = Infinity;
                         s.points.forEach((p, i) => { const d = Math.hypot(raw.x - w2s(p).x, raw.y - w2s(p).y); if (d < 45 && d < minDist) { minDist = d; hitType = 'vertex'; hitIdx = i; } });
@@ -678,51 +582,22 @@
                             for (let i = 0; i < s.points.length; i++) { const p1 = w2s(s.points[i]), p2 = w2s(s.points[(i+1)%s.points.length]); const midX = (p1.x + p2.x) / 2, midY = (p1.y + p2.y) / 2; const d = Math.hypot(raw.x - midX, raw.y - midY); if (d < 45 && d < minDist) { minDist = d; hitType = 'label'; hitIdx = i; } }
                             for (let i = 0; i < s.points.length; i++) { const d = distToSegment(raw, w2s(s.points[i]), w2s(s.points[(i+1)%s.points.length])); if (d < 35 && d < minDist) { minDist = d; hitType = 'edge'; hitIdx = i; } }
                         }
-                        if (hitType === 'vertex') { s.activeMode = 'angle'; s.selectedIdx = hitIdx; openModal(); }
-                        else if (hitType === 'edge' || hitType === 'label') { s.activeMode = 'edge'; s.selectedIdx = hitIdx; openModal(); }
+                        if (hitType === 'vertex') { s.activeMode = 'angle'; s.selectedIdx = hitIdx; openModal(); } else if (hitType === 'edge' || hitType === 'label') { s.activeMode = 'edge'; s.selectedIdx = hitIdx; openModal(); }
                     }
                 };
-                const onTouchStart = (e) => {
-                    if (e.touches.length === 2) {
-                        s.isPanning = false; s.isInteractingWithCanvas = true;
-                        s.initialPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); s.initialZoom = s.zoom; 
-                        const r = canvas.getBoundingClientRect(); s.initialPinchCenter = { x: (e.touches[0].clientX + e.touches[1].clientX) / 2 - r.left, y: (e.touches[0].clientY + e.touches[1].clientY) / 2 - r.top };
-                        if (e.cancelable) e.preventDefault(); return;
-                    }
-                    onStart(e);
-                };
-                const onTouchMove = (e) => {
-                    if (s.isInteractingWithCanvas && e.touches.length === 2 && s.initialPinchDist) {
-                        const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY), nz = Math.max(0.1, Math.min(10, s.initialZoom * (d / s.initialPinchDist))), r = nz / s.zoom;
-                        s.cameraX = s.initialPinchCenter.x - (s.initialPinchCenter.x - s.cameraX) * r; s.cameraY = s.initialPinchCenter.y - (s.cameraY) * r; s.zoom = nz; draw();
-                        if (e.cancelable) e.preventDefault(); return;
-                    }
-                    onMove(e);
-                };
+                const onTouchStart = (e) => { if (e.touches.length === 2) { s.isPanning = false; s.isInteractingWithCanvas = true; s.initialPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); s.initialZoom = s.zoom; const r = canvas.getBoundingClientRect(); s.initialPinchCenter = { x: (e.touches[0].clientX + e.touches[1].clientX) / 2 - r.left, y: (e.touches[0].clientY + e.touches[1].clientY) / 2 - r.top }; if (e.cancelable) e.preventDefault(); return; } onStart(e); };
+                const onTouchMove = (e) => { if (s.isInteractingWithCanvas && e.touches.length === 2 && s.initialPinchDist) { const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY), nz = Math.max(0.1, Math.min(10, s.initialZoom * (d / s.initialPinchDist))), r = nz / s.zoom; s.cameraX = s.initialPinchCenter.x - (s.initialPinchCenter.x - s.cameraX) * r; s.cameraY = s.initialPinchCenter.y - (s.cameraY) * r; s.zoom = nz; draw(); if (e.cancelable) e.preventDefault(); return; } onMove(e); };
                 const onTouchEnd = () => { s.initialPinchDist = null; onEnd(); };
-
                 canvas.addEventListener('mousedown', onStart); window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onEnd);
                 canvas.addEventListener('touchstart', onTouchStart, { passive: false }); window.addEventListener('touchmove', onTouchMove, { passive: false }); window.addEventListener('touchend', onTouchEnd);
-
-                return () => {
-                    window.removeEventListener('resize', handleResize);
-                    canvas.removeEventListener('mousedown', onStart); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onEnd);
-                    canvas.removeEventListener('touchstart', onTouchStart); window.removeEventListener('touchmove', onTouchMove); window.removeEventListener('touchend', onTouchEnd);
-                };
+                return () => { window.removeEventListener('resize', handleResize); canvas.removeEventListener('mousedown', onStart); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onEnd); canvas.removeEventListener('touchstart', onTouchStart); canvas.removeEventListener('touchmove', onTouchMove); canvas.removeEventListener('touchend', onTouchEnd); };
             }, [draw, s]);
             
-            // 初回マウント時に面積の再計算を行う（タブ切り替え対応）
-            useEffect(() => {
-                rebuildGeometry(false);
-                draw();
-            }, []);
+            useEffect(() => { rebuildGeometry(false); draw(); }, []);
 
             return (
                 <div className="flex flex-col md:flex-row gap-6 h-full overflow-hidden text-[14px]">
-                    {/* 左側：操作パネル＆履歴（サイドバー） */}
                     <div className="w-full md:w-[360px] flex flex-col gap-4 h-full overflow-y-auto scrollbar-hide pb-10 md:pb-0 shrink-0">
-                        
-                        {/* 操作ボタングループ */}
                         <div className="ios-card-base px-3 py-2.5 flex justify-between items-center shadow-lg shrink-0">
                             <div className="flex gap-2">
                                 <button onClick={undo} className="btn-3d btn-3d-zinc px-3 h-10 text-white text-[12px] font-bold rounded-lg"><Icon name="undo" size={14} className="mr-1"/>戻る</button>
@@ -731,8 +606,6 @@
                             </div>
                             <button onClick={resetDrawing} className="btn-3d btn-3d-red px-3 h-10 text-white text-[12px] font-bold rounded-lg">リセット</button>
                         </div>
-
-                        {/* 勾配入力 */}
                         <div className="ios-card-base px-3 py-2.5 flex items-center gap-3 shrink-0 shadow-lg">
                             <div className="flex items-center justify-center shrink-0">
                                 <svg width="48" height="36" viewBox="0 0 64 48" className="text-zinc-400">
@@ -742,23 +615,15 @@
                                 </svg>
                             </div>
                             <input type="number" value={slopeInput} onChange={(e) => handleSlopeChange(e.target.value)} className="alloc-input-field flex-1 !text-left !px-3 !h-10 !text-[15px] placeholder-zinc-500" placeholder="勾配100" />
-                            <div className="flex items-center justify-center min-w-[64px] bg-[#2c2c2e] border border-zinc-700 h-10 rounded-xl shadow-sm px-1 text-white font-bold text-[15px]">
-                                {slopeDeg}
-                            </div>
+                            <div className="flex items-center justify-center min-w-[64px] bg-[#2c2c2e] border border-zinc-700 h-10 rounded-xl shadow-sm px-1 text-white font-bold text-[15px]"> {slopeDeg} </div>
                         </div>
-
-                        {/* 更新・保存ボタン */}
                         <div className="flex gap-3 shrink-0">
                             <button onClick={executeUpdate} className="flex-[3] py-2.5 btn-3d btn-3d-blue text-white text-[14px] font-bold rounded-xl shadow-lg flex items-center justify-center gap-2">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5l10 -10"/></svg>
                                 作図 更新
                             </button>
-                            <button onClick={exportDrawing} className="flex-[2] py-2.5 btn-3d btn-3d-orange text-white text-[13px] font-bold rounded-xl shadow-lg">
-                                履歴に保存
-                            </button>
+                            <button onClick={exportDrawing} className="flex-[2] py-2.5 btn-3d btn-3d-orange text-white text-[13px] font-bold rounded-xl shadow-lg"> 履歴に保存 </button>
                         </div>
-
-                        {/* 履歴リスト */}
                         <div className="ios-card-base overflow-hidden shadow-xl border border-zinc-800 flex-1 flex flex-col min-h-[300px]">
                             <div className="bg-[#2c2c2e] p-2.5 flex justify-between items-center border-b border-zinc-700 shrink-0">
                                 <h2 className="text-[13px] font-bold text-white uppercase tracking-widest">保存済み 面積履歴</h2>
@@ -776,9 +641,7 @@
                                             </div>
                                             <div className="relative cursor-pointer active:opacity-70 transition-opacity mb-2" onClick={() => loadHistoryItem(actualIdx)}>
                                                 <img src={data.img} className="w-full rounded-lg border border-zinc-800 bg-black object-contain max-h-[140px]" alt="Area Map" />
-                                                <div className="absolute bottom-2 right-2 bg-black/70 text-white text-[10px] font-bold px-2 py-1 rounded shadow-md pointer-events-none backdrop-blur-sm">
-                                                    タップで再編集
-                                                </div>
+                                                <div className="absolute bottom-2 right-2 bg-black/70 text-white text-[10px] font-bold px-2 py-1 rounded shadow-md pointer-events-none backdrop-blur-sm"> タップで再編集 </div>
                                             </div>
                                             <button onClick={() => deleteHistoryItem(actualIdx)} className="w-full py-2 bg-[#1c1c1e] text-red-500 font-bold rounded-lg text-[13px] active:scale-95 transition-transform border border-zinc-800">削除する</button>
                                         </div>
@@ -786,35 +649,25 @@
                             </div>
                         </div>
                     </div>
-
-                    {/* 右側：作図キャンバス（メインエリア） */}
                     <div className="flex-1 canvas-container relative shadow-2xl bg-[#1c1c1e] h-full flex flex-col rounded-2xl overflow-hidden border border-[#38383a] min-h-[350px]" ref={containerRef}>
                         <div className="absolute inset-0 opacity-20 pointer-events-none" style={{backgroundImage: 'radial-gradient(#FFFFFF 1px, transparent 1px)', backgroundSize: '32px 32px'}}></div>
                         <div className="absolute top-2 right-4 text-[14px] font-bold text-zinc-600 tracking-widest pointer-events-none opacity-50 z-10">KYOWAROOF</div>
                         <canvas ref={canvasRef} className="w-full h-full block touch-none cursor-crosshair flex-1"></canvas>
                         <div className="absolute top-3 left-3 bg-[#5E5CE6] text-white px-4 py-2 rounded-xl flex items-baseline gap-2 shadow-lg pointer-events-none">
-                            <span className="text-[12px] font-bold opacity-80">面積</span>
-                            <span className="text-2xl font-bold">{areaValue}</span>
-                            <span className="text-[12px] font-bold opacity-80">m²</span>
+                            <span className="text-[12px] font-bold opacity-80">面積</span> <span className="text-2xl font-bold">{areaValue}</span> <span className="text-[12px] font-bold opacity-80">m²</span>
                         </div>
                     </div>
-
                     {isModalOpen && (
                         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm px-4 animate-fade-in">
                             <div className="bg-[#1c1c1e] rounded-[2rem] w-full max-w-sm shadow-2xl border border-white/10 overflow-hidden">
                                 <div className="p-5 flex flex-col gap-4">
                                     <h2 className="text-[18px] font-bold text-center text-white">{s.activeMode === 'edge' ? '寸法の入力' : '角度の入力'}</h2>
-                                    
-                                    {/* 擬似入力欄 */}
                                     <div className="relative">
                                         <div className={`w-full text-center text-[32px] font-bold bg-[#2c2c2e] text-white h-16 rounded-2xl flex items-center justify-center overflow-hidden border-2 transition-colors ${isFirstInput ? 'border-[#5E5CE6]' : 'border-transparent'}`}>
-                                            <span className={`transition-all ${isFirstInput && modalValue !== '' ? 'bg-[#5E5CE6] text-white px-3 py-1 rounded-lg' : ''}`}>
-                                                {modalValue || '0'}
-                                            </span>
+                                            <span className={`transition-all ${isFirstInput && modalValue !== '' ? 'bg-[#5E5CE6] text-white px-3 py-1 rounded-lg' : ''}`}> {modalValue || '0'} </span>
                                         </div>
                                         <span className="absolute right-5 top-1/2 -translate-y-1/2 text-white/30 font-bold text-xl pointer-events-none">{s.activeMode === 'edge' ? 'm' : '°'}</span>
                                     </div>
-                                    
                                     {s.activeMode !== 'edge' && (
                                         <div className="grid grid-cols-3 gap-2">
                                             <button onClick={() => {setModalValue('90'); setIsFirstInput(false);}} className="py-2 bg-[#2c2c2e] text-white rounded-xl font-bold btn-3d btn-3d-zinc">90°</button>
@@ -822,41 +675,32 @@
                                             <button onClick={() => {setModalValue('45'); setIsFirstInput(false);}} className="py-2 bg-[#2c2c2e] text-white rounded-xl font-bold btn-3d btn-3d-zinc">45°</button>
                                         </div>
                                     )}
-                                    
-                                    {/* テンキー & コントロール */}
                                     <div className="flex gap-2">
-                                        {/* テンキー（3列） */}
                                         <div className="grid grid-cols-3 gap-2 flex-[3]">
                                             {['7','8','9','4','5','6','1','2','3','0','00','.'].map(key => (
-                                                <button key={key} onClick={() => handleNumpadClick(key)} className="h-14 bg-[#2c2c2e] text-white rounded-xl font-bold text-[24px] btn-3d btn-3d-zinc flex items-center justify-center active:bg-[#3a3a3c] transition-colors">
-                                                    {key}
-                                                </button>
+                                                <button key={key} onClick={() => handleNumpadClick(key)} className="h-14 bg-[#2c2c2e] text-white rounded-xl font-bold text-[24px] btn-3d btn-3d-zinc flex items-center justify-center active:bg-[#3a3a3c] transition-colors"> {key} </button>
                                             ))}
                                         </div>
-                                        {/* 右側アクションボタン */}
                                         <div className="flex flex-col gap-2 flex-[1]">
-                                            <button onClick={() => handleNumpadClick('BS')} className="flex-1 text-white rounded-xl font-bold btn-3d btn-3d-darkgray flex items-center justify-center">
-                                                <Icon name="backspace" size={20} />
-                                            </button>
+                                            <button onClick={() => handleNumpadClick('BS')} className="flex-1 text-white rounded-xl font-bold btn-3d btn-3d-darkgray flex items-center justify-center"> <Icon name="backspace" size={20} /> </button>
                                             <button onClick={() => setIsModalOpen(false)} className="flex-1 text-white rounded-xl font-bold btn-3d btn-3d-darkgray text-[13px]">ｷｬﾝｾﾙ</button>
                                             <button onClick={handleModalSave} className="flex-[2] bg-[#5E5CE6] text-white rounded-xl font-bold btn-3d btn-3d-indigo text-[18px]">適用</button>
                                         </div>
                                     </div>
-                                    
                                     {s.activeMode === 'edge' && s.isClosed && (
                                         <div className="bg-[#2c2c2e] border border-white/5 p-4 rounded-2xl">
                                             <div className="flex justify-between items-center mb-3 border-b border-white/5 pb-2">
                                                 <div className="text-sm text-[#5E5CE6] font-bold">勾配と高低差</div>
-                                                <div className="text-sm font-semibold text-white bg-black/50 px-3 py-1 rounded-lg">{calcEdgeInfo().relDeg.toFixed(1)}°</div>
+                                                <div className="text-sm font-semibold text-white bg-black/50 px-3 py-1 rounded-lg">{edgeInfo.relDeg.toFixed(1)}°</div>
                                             </div>
                                             <div className="grid grid-cols-2 gap-3">
                                                 <div>
                                                     <div className="text-[12px] text-[#8E8E93] font-bold mb-1">水平100mm当り</div>
-                                                    <div className="text-base font-bold text-white flex items-baseline gap-1"><span className="text-[#5E5CE6] text-xl">{calcEdgeInfo().edgeSlopeH}</span><span className="text-[12px] text-white/50">mm</span></div>
+                                                    <div className="text-base font-bold text-white flex items-baseline gap-1"><span className="text-[#5E5CE6] text-xl">{edgeInfo.edgeSlopeH}</span><span className="text-[12px] text-white/50">mm</span></div>
                                                 </div>
                                                 <div>
                                                     <div className="text-[12px] text-[#8E8E93] font-bold mb-1">区間高低差</div>
-                                                    <div className="text-base font-bold text-white flex items-baseline gap-1"><span className="text-[#5E5CE6] text-xl">{calcEdgeInfo().edgeTotalDrop}</span><span className="text-[12px] text-white/50">mm</span></div>
+                                                    <div className="text-base font-bold text-white flex items-baseline gap-1"><span className="text-[#5E5CE6] text-xl">{edgeInfo.edgeTotalDrop}</span><span className="text-[12px] text-white/50">mm</span></div>
                                                 </div>
                                             </div>
                                         </div>
@@ -869,13 +713,11 @@
             );
         };
 
-        // --- メインアプリケーション ---
         function App() {
             const handleFocus = (e) => { if (e && e.target && e.target.select) e.target.select(); };
             const handleEnterKey = (e, nextRef) => { if (e.key === 'Enter') { e.preventDefault(); nextRef.current?.focus(); } };
 
             const [activeApp, setActiveApp] = useState(() => localStorage.getItem('activeApp') || 'calc');
-            
             const mainRef = useRef(null);
             const calcInputRef = useRef(null);
             const allocCalcInputRef = useRef(null);
@@ -898,10 +740,10 @@
             const slopeCanvasRef = useRef(null);
             const tfTotalLRef = useRef(null);
             
-            const allocMemoDropdownRef = useRef(null);
-            const allocMemoBtnRef = useRef(null);
             const productDropdownRef = useRef(null);
             const productBtnRef = useRef(null);
+            const allocMemoDropdownRef = useRef(null);
+            const allocMemoBtnRef = useRef(null);
 
             const [currentProductName, setCurrentProductName] = useState(() => localStorage.getItem('productName') || '');
             const [stdLength, setStdLength] = useState(() => localStorage.getItem('stdLength') || '');
@@ -909,7 +751,6 @@
             const [totalDim, setTotalDim] = useState(() => localStorage.getItem('totalDim') || '');
             const [cumulativeSum, setCumulativeSum] = useState(() => toNum(localStorage.getItem('cumulativeSum') || 0));
             const [history, setHistory] = useState(() => getStored('gradient_calc_history', []));
-            
             const [allocL, setAllocL] = useState(() => localStorage.getItem('allocL') || '');
             const [allocPitch, setAllocPitch] = useState(() => localStorage.getItem('allocPitch') || '');
             const [allocCount, setAllocCount] = useState(() => localStorage.getItem('allocCount') || '');
@@ -917,35 +758,27 @@
             const [allocNo, setAllocNo] = useState(() => localStorage.getItem('allocNo') || '');
             const [allocSource, setAllocSource] = useState(() => localStorage.getItem('allocSource') || null);
             const [allocHistory, setAllocHistory] = useState(() => getStored('waritsuke_history', []));
-            
             const [allocCalcInput, setAllocCalcInput] = useState('');
             const [allocCumulativeSum, setAllocCumulativeSum] = useState(() => toNum(localStorage.getItem('allocCumulativeSum') || 0));
             const [allocSumHistory, setAllocSumHistory] = useState(() => getStored('allocSumHistory', []));
             const [isAllocMemoDropdownOpen, setIsAllocMemoDropdownOpen] = useState(false);
-
             const [kanaPitch, setKanaPitch] = useState(() => localStorage.getItem('kanaPitch') || '');
             const [kanaCount, setKanaCount] = useState(() => localStorage.getItem('kanaCount') || '');
             const [kanaLength, setKanaLength] = useState(() => localStorage.getItem('kanaLength') || '');
-
             const [slopeL1, setSlopeL1] = useState(() => localStorage.getItem('slopeL1') || '');
             const [slopeL2, setSlopeL2] = useState(() => localStorage.getItem('slopeL2') || '');
             const [slopeW, setSlopeW] = useState(() => localStorage.getItem('slopeW') || '');
             const [slopePitch, setSlopePitch] = useState(() => localStorage.getItem('slopePitch') || '');
-
             const [tfSize, setTfSize] = useState(() => localStorage.getItem('tfSize') || '600');
             const [tfTotalL, setTfTotalL] = useState(() => localStorage.getItem('tfTotalL') || '');
-
             const [totalHistory, setTotalHistory] = useState(() => getStored('totalHistory', []));
             const [isClearModalOpen, setIsClearModalOpen] = useState(false);
             const [calcInput, setCalcInput] = useState('');
-
             const [isProductDropdownOpen, setIsProductDropdownOpen] = useState(false);
-
             const [zoomedImage, setZoomedImage] = useState(null); 
             const [slopeImageUrl, setSlopeImageUrl] = useState('');
             const [toastMsg, setToastMsg] = useState('');
 
-            // --- 面積計算用の状態（タブ切り替えで消えないように保持） ---
             const areaStateRef = useRef({
                 points: [], manualLengths: {}, fixedAngles: {}, isClosed: false, selectedIdx: -1, activeMode: 'edge', ppx: 60,
                 actionHistory: [], cameraX: 0, cameraY: 0, zoom: 1.0, isPanning: false, lastRawPos: {x: 0, y: 0}, startRawPos: {x: 0, y: 0}, hasMoved: false,
@@ -953,92 +786,50 @@
             });
             const [areaSavedData, setAreaSavedData] = useState(() => getStored('area_calc_data_v20_ipad', []));
             
-            const showToast = useCallback((msg) => {
-                setToastMsg(msg);
-                setTimeout(() => setToastMsg(''), 1800);
-            }, []);
+            const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 1800); }, []);
 
             const materialResult = useMemo(() => {
                 const total = toNum(totalDim), std = toNum(stdLength), over = toNum(overlap), effective = std - over;
-                if (total > 0 && effective > 0) {
-                    const pieces = Math.ceil(total / effective);
-                    return { pieces, remainder: (pieces * effective) - total };
-                }
+                if (total > 0 && effective > 0) { const pieces = Math.ceil(total / effective); return { pieces, remainder: (pieces * effective) - total }; }
                 return { pieces: 0, remainder: 0 };
             }, [totalDim, stdLength, overlap]);
 
             const calcSummaryByName = useMemo(() => {
                 const summary = {};
-                history.forEach(item => {
-                    const key = item.name || "（品名なし）";
-                    if (!summary[key]) summary[key] = { pieces: 0, totalDistance: 0 };
-                    summary[key].pieces += (item.pieces || 0);
-                    summary[key].totalDistance += toNum(item.total);
-                });
+                history.forEach(item => { const key = item.name || "（品名なし）"; if (!summary[key]) summary[key] = { pieces: 0, totalDistance: 0 }; summary[key].pieces += (item.pieces || 0); summary[key].totalDistance += toNum(item.total); });
                 return summary;
             }, [history]);
 
             const uniqueProductNames = useMemo(() => {
                 const unique = new Set();
-                for (let i = 0; i < history.length; i++) {
-                    if (history[i].name && history[i].name.trim() !== "") {
-                        unique.add(history[i].name.trim());
-                        if (unique.size >= 5) break;
-                    }
-                }
+                for (let i = 0; i < history.length; i++) { if (history[i].name && history[i].name.trim() !== "") { unique.add(history[i].name.trim()); if (unique.size >= 5) break; } }
                 return Array.from(unique);
             }, [history]);
 
             const allocCalculated = useMemo(() => {
                 const L = toNum(allocW), W = toNum(allocPitch), N = toNum(allocCount);
                 let pitchMode = { q: '-', qRem: '-' }, countMode = { w: '-', wRem: '-' };
-                if (L > 0) {
-                    if (W > 0) { const q = Math.ceil(L / W); pitchMode = { q, qRem: (q * W) - L }; }
-                    if (N > 0) { const w = Math.ceil(L / N); countMode = { w, wRem: (w * N) - L }; }
-                }
+                if (L > 0) { if (W > 0) { const q = Math.ceil(L / W); pitchMode = { q, qRem: (q * W) - L }; } if (N > 0) { const w = Math.ceil(L / N); countMode = { w, wRem: (w * N) - L }; } }
                 return { pitchMode, countMode };
             }, [allocW, allocPitch, allocCount]);
 
-            const allocTotals = useMemo(() => {
-                return allocHistory.reduce((acc, item) => {
-                    const qVal = parseInt(unformat(item.q)) || 0;
-                    if (item.source === 'pitch') { acc.pitchQ += qVal; }
-                    if (item.source === 'count') { acc.countQ += qVal; }
-                    return acc;
-                }, { pitchQ: 0, countQ: 0 });
-            }, [allocHistory]);
-
+            const allocTotals = useMemo(() => { return allocHistory.reduce((acc, item) => { const qVal = parseInt(unformat(item.q)) || 0; if (item.source === 'pitch') acc.pitchQ += qVal; else if (item.source === 'count') acc.countQ += qVal; return acc; }, { pitchQ: 0, countQ: 0 }); }, [allocHistory]);
             const allocSummaryByMemo = useMemo(() => {
                 const summary = {};
-                allocHistory.forEach(item => {
-                    const key = item.no || "（備考なし）";
-                    if (!summary[key]) summary[key] = { pitch: 0, count: 0 };
-                    const qVal = parseInt(unformat(item.q)) || 0;
-                    if (item.source === 'pitch') { summary[key].pitch += qVal; }
-                    else if (item.source === 'count') { summary[key].count += qVal; }
-                });
+                allocHistory.forEach(item => { const key = item.no || "（備考なし）"; if (!summary[key]) summary[key] = { pitch: 0, count: 0 }; const qVal = parseInt(unformat(item.q)) || 0; if (item.source === 'pitch') summary[key].pitch += qVal; else if (item.source === 'count') summary[key].count += qVal; });
                 return summary;
             }, [allocHistory]);
 
             const uniqueAllocMemos = useMemo(() => {
                 const unique = new Set();
-                for (let i = 0; i < allocHistory.length; i++) {
-                    if (allocHistory[i].no && allocHistory[i].no.trim() !== "") {
-                        unique.add(allocHistory[i].no.trim());
-                        if (unique.size >= 5) break;
-                    }
-                }
+                for (let i = 0; i < allocHistory.length; i++) { if (allocHistory[i].no && allocHistory[i].no.trim() !== "") { unique.add(allocHistory[i].no.trim()); if (unique.size >= 5) break; } }
                 return Array.from(unique);
             }, [allocHistory]);
 
             const kanamonoResults = useMemo(() => {
                 const L = toNum(kanaLength), W = toNum(kanaPitch), N = toNum(kanaCount);
                 let resQ = { val: '-', rem: '-' }, resW = { val: '-', rem: '-' };
-                if (L > 0) {
-                    if (W > 0) { const q = Math.floor(L / W) + 1; resQ = { val: q, rem: L - (W * (q - 1)) }; }
-                    if (N > 1) { const w = Math.floor(L / (N - 1)); resW = { val: w, rem: L - (w * (N - 1)) }; }
-                    else if (N === 1) resW = { val: 0, rem: L };
-                }
+                if (L > 0) { if (W > 0) { const q = Math.floor(L / W) + 1; resQ = { val: q, rem: L - (W * (q - 1)) }; } if (N > 1) { const w = Math.floor(L / (N - 1)); resW = { val: w, rem: L - (w * (N - 1)) }; } else if (N === 1) resW = { val: 0, rem: L }; }
                 return { resQ, resW };
             }, [kanaLength, kanaPitch, kanaCount]);
 
@@ -1053,60 +844,29 @@
             }, [kanaLength, kanaPitch, kanaCount, kanamonoResults]);
 
             const kanamonoLastRem = useMemo(() => {
-                const L = toNum(kanaLength);
-                let qRem = '-', nRem = '-';
-                if (kanamonoTableData.length > 0) {
-                    const lastQPos = kanamonoTableData.filter(r => r.q !== undefined).pop()?.q;
-                    const lastNPos = kanamonoTableData.filter(r => r.n !== undefined).pop()?.n;
-                    if (lastQPos !== undefined) qRem = L - lastQPos;
-                    if (lastNPos !== undefined) nRem = L - lastNPos;
-                }
+                const L = toNum(kanaLength); let qRem = '-', nRem = '-';
+                if (kanamonoTableData.length > 0) { const lastQPos = kanamonoTableData.filter(r => r.q !== undefined).pop()?.q; const lastNPos = kanamonoTableData.filter(r => r.n !== undefined).pop()?.n; if (lastQPos !== undefined) qRem = L - lastQPos; if (lastNPos !== undefined) nRem = L - lastNPos; }
                 return { qRem, nRem };
             }, [kanamonoTableData, kanaLength]);
 
             const slopeResults = useMemo(() => {
                 const a = toNum(slopeL1), c = toNum(slopeL2), b = toNum(slopeW), interval = toNum(slopePitch);
                 if (b <= 0 || interval <= 0) return { a, b, c, interval, newB: '-', newC: '-', count: '-', step: '-', table: [] };
-                const count = Math.ceil(b / interval), newB = count * interval;
-                const slope = (c - a) / b, newC = a + (slope * newB), step = slope * interval;
-                const table = [];
-                for (let i = 0; i <= count; i++) {
-                    const dist = i * interval;
-                    table.push({ i, dist, height: Math.round(a + (slope * dist)) });
-                }
+                const count = Math.ceil(b / interval), newB = count * interval, slope = (c - a) / b, newC = a + (slope * newB), step = slope * interval, table = [];
+                for (let i = 0; i <= count; i++) { const dist = i * interval; table.push({ i, dist, height: Math.round(a + (slope * dist)) }); }
                 return { a, b, c, interval, newB, newC, count, step: Math.abs(step), table };
             }, [slopeL1, slopeL2, slopeW, slopePitch]);
 
             const tfResults = useMemo(() => {
-                const size = parseInt(tfSize) || 600;
-                const L = toNum(tfTotalL);
-                let yamaDim = 0, taniDim = 0, calcSize = size;
-                if (size === 600) { yamaDim = 200; taniDim = 100; calcSize = 600; }
-                else if (size === 500) { yamaDim = 250; taniDim = 125; calcSize = 500; }
-                else if (size === 1000) { yamaDim = 500; taniDim = 250; calcSize = 500; }
+                const size = parseInt(tfSize) || 600; const L = toNum(tfTotalL); let yamaDim = 0, taniDim = 0, calcSize = size;
+                if (size === 600) { yamaDim = 200; taniDim = 100; calcSize = 600; } else if (size === 500) { yamaDim = 250; taniDim = 125; calcSize = 500; } else if (size === 1000) { yamaDim = 500; taniDim = 250; calcSize = 500; }
                 if (L <= 0) return { centerL: '', yamaDim, taniDim, taniZan: '', yamaZan: '', table: [], count: 0, roofTaniCount: '', roofYamaCount: '', L: 0 };
-                const centerL = L / 2;
-                const taniZan = excelMod(centerL, yamaDim);
-                const yamaZan = excelMod(centerL - taniDim, yamaDim);
-                let currentTani = taniZan;
-                let currentYama = yamaZan;
-                let table = [];
-                let count = 0;
-                while (currentTani <= L || currentYama <= L) {
-                    table.push({ tani: (currentTani <= L && currentTani >= 0) ? currentTani : null, yama: (currentYama <= L && currentYama >= 0) ? currentYama : null });
-                    currentTani += size; currentYama += size; count++;
-                    if (count > 1000) break; 
-                }
-                const roofTaniCount = Math.ceil((L + taniDim) / calcSize);
-                const roofYamaCount = Math.ceil(L / calcSize);
+                const centerL = L / 2, taniZan = excelMod(centerL, yamaDim), yamaZan = excelMod(centerL - taniDim, yamaDim);
+                let currentTani = taniZan, currentYama = yamaZan, table = [], count = 0;
+                while (currentTani <= L || currentYama <= L) { table.push({ tani: (currentTani <= L && currentTani >= 0) ? currentTani : null, yama: (currentYama <= L && currentYama >= 0) ? currentYama : null }); currentTani += size; currentYama += size; count++; if (count > 1000) break; }
+                const roofTaniCount = Math.ceil((L + taniDim) / calcSize), roofYamaCount = Math.ceil(L / calcSize);
                 return { centerL, yamaDim, taniDim, taniZan, yamaZan, table, count, roofTaniCount, roofYamaCount, L: L };
             }, [tfSize, tfTotalL]);
-
-            const clearDistance = () => setTotalDim('');
-            const clearCalcInputs = () => { setCurrentProductName(''); setStdLength(''); setOverlap(''); setTotalDim(''); setCalcInput(''); setCumulativeSum(0); setTotalHistory([]);};
-            const clearAllocInputs = () => { setAllocL(''); setAllocPitch(''); setAllocCount(''); setAllocW(''); setAllocNo(''); setAllocSource(null); };
-            const clearKanamonoInputs = () => { setKanaPitch(''); setKanaCount(''); setKanaLength(''); };
-            const clearSlopeInputs = () => { setSlopeL1(''); setSlopeL2(''); setSlopeW(''); setSlopePitch(''); };
 
             const addValue = () => {
                 const val = toNum(calcInput);
@@ -1117,7 +877,7 @@
                     setCalcInput(''); setTimeout(() => calcInputRef.current?.focus(), 50);
                 }
             };
-            
+
             const addAllocValue = () => {
                 const val = toNum(allocCalcInput);
                 if (val > 0) {
@@ -1128,156 +888,37 @@
                 }
             };
 
-            const saveToHistoryManually = () => {
-                if (toNum(totalDim) === 0) return;
-                const pieces = materialResult.pieces;
-                const newHistory = [{
-                    id: Date.now().toString(),
-                    name: currentProductName,
-                    total: totalDim, 
-                    std: stdLength, 
-                    overlap: overlap, 
-                    pieces: pieces, 
-                    remainder: materialResult.remainder, 
-                    createdAt: Date.now()
-                }, ...history].slice(0, 50);
-                setHistory(newHistory);
-            };
-            
-            const saveAllocHistory = () => {
-                if (toNum(allocW) === 0) return;
-                if (allocSource === 'pitch' && toNum(allocPitch) === 0) return;
-                if (allocSource === 'count' && toNum(allocCount) === 0) return;
-                if (!allocSource) return;
-                let entry = { id: Date.now().toString(), L: format(allocW), memoL: allocL, no: allocNo, source: allocSource };
-                if (allocSource === 'pitch') {
-                    entry = { ...entry, pitch: format(allocPitch), q: allocCalculated.pitchMode.q, rem: format(allocCalculated.pitchMode.qRem) };
-                } else {
-                    entry = { ...entry, count: allocCalculated.countMode.w, q: format(allocCount), rem: format(allocCalculated.countMode.wRem) };
-                }
-                setAllocHistory([entry, ...allocHistory]);
-            };
+            const clearDistance = () => setTotalDim('');
+            const clearCalcInputs = () => { setCurrentProductName(''); setStdLength(''); setOverlap(''); setTotalDim(''); setCalcInput(''); setCumulativeSum(0); setTotalHistory([]);};
+            const clearAllocInputs = () => { setAllocL(''); setAllocPitch(''); setAllocCount(''); setAllocW(''); setAllocNo(''); setAllocSource(null); };
+            const clearKanamonoInputs = () => { setKanaPitch(''); setKanaCount(''); setKanaLength(''); };
+            const clearSlopeInputs = () => { setSlopeL1(''); setSlopeL2(''); setSlopeW(''); setSlopePitch(''); };
 
-            const loadAllocHistoryToInput = (item, source) => {
-                setAllocW(item.L);
-                setAllocL(item.memoL || "");
-                setAllocNo(item.no || "");
-                if (source === 'pitch' && item.pitch) { setAllocPitch(item.pitch); setAllocSource('pitch'); }
-                else if (source === 'count' && item.count) { setAllocCount(item.count); setAllocSource('count'); }
-            };
-
-            const updateRemarkNameInAllocHistory = (oldKey, newKey) => {
-                const finalOld = oldKey === "（備考なし）" ? "" : oldKey;
-                const finalNew = newKey === "（備考なし）" ? "" : newKey;
-                if (finalOld === finalNew) return;
-                setAllocHistory(prev => prev.map(item => ((item.no || "") === finalOld ? { ...item, no: finalNew } : item)));
-            };
-
-            const deleteByRemarkInAllocHistory = (remarkKey) => {
-                const targetKey = remarkKey === "（備考なし）" ? "" : remarkKey;
-                setAllocHistory(prev => prev.filter(item => (item.no || "") !== targetKey));
-            };
-
-            const updateProductNameInHistory = (oldKey, newKey) => {
-                const finalOld = oldKey === "（品名なし）" ? "" : oldKey;
-                const finalNew = newKey === "（品名なし）" ? "" : newKey;
-                if (finalOld === finalNew) return;
-                setHistory(prev => prev.map(item => ((item.name || "") === finalOld ? { ...item, name: finalNew } : item)));
-            };
-
-            const deleteByNameInHistory = (nameKey) => {
-                const targetKey = nameKey === "（品名なし）" ? "" : nameKey;
-                setHistory(prev => prev.filter(item => (item.name || "") !== targetKey));
-            };
-
-            const openSlopeZoom = () => {
-                if (slopeCanvasRef.current) {
-                    setSlopeImageUrl(slopeCanvasRef.current.toDataURL('image/png'));
-                    setZoomedImage('slope');
-                }
-            };
+            const saveToHistoryManually = () => { if (toNum(totalDim) === 0) return; const pieces = materialResult.pieces, newHistory = [{ id: Date.now().toString(), name: currentProductName, total: totalDim, std: stdLength, overlap: overlap, pieces: pieces, remainder: materialResult.remainder, createdAt: Date.now() }, ...history].slice(0, 50); setHistory(newHistory); };
+            const saveAllocHistory = () => { if (toNum(allocW) === 0 || !allocSource) return; let entry = { id: Date.now().toString(), L: format(allocW), memoL: allocL, no: allocNo, source: allocSource }; if (allocSource === 'pitch') entry = { ...entry, pitch: format(allocPitch), q: allocCalculated.pitchMode.q, rem: format(allocCalculated.pitchMode.qRem) }; else entry = { ...entry, count: allocCalculated.countMode.w, q: format(allocCount), rem: format(allocCalculated.countMode.wRem) }; setAllocHistory([entry, ...allocHistory]); };
+            const loadAllocHistoryToInput = (item, source) => { setAllocW(item.L); setAllocL(item.memoL || ""); setAllocNo(item.no || ""); if (source === 'pitch' && item.pitch) { setAllocPitch(item.pitch); setAllocSource('pitch'); } else if (source === 'count' && item.count) { setAllocCount(item.count); setAllocSource('count'); } };
+            const updateRemarkNameInAllocHistory = (oldKey, newKey) => { const finalOld = oldKey === "（備考なし）" ? "" : oldKey; const finalNew = newKey === "（備考なし）" ? "" : newKey; if (finalOld === finalNew) return; setAllocHistory(prev => prev.map(item => ((item.no || "") === finalOld ? { ...item, no: finalNew } : item))); };
+            const deleteByRemarkInAllocHistory = (remarkKey) => { const targetKey = remarkKey === "（備考なし）" ? "" : remarkKey; setAllocHistory(prev => prev.filter(item => (item.no || "") !== targetKey)); };
+            const updateProductNameInHistory = (oldKey, newKey) => { const finalOld = oldKey === "（品名なし）" ? "" : oldKey; const finalNew = newKey === "（品名なし）" ? "" : newKey; if (finalOld === finalNew) return; setHistory(prev => prev.map(item => ((item.name || "") === finalOld ? { ...item, name: finalNew } : item))); };
+            const deleteByNameInHistory = (nameKey) => { const targetKey = nameKey === "（品名なし）" ? "" : nameKey; setHistory(prev => prev.filter(item => (item.name || "") !== targetKey)); };
+            const openSlopeZoom = () => { if (slopeCanvasRef.current) { setSlopeImageUrl(slopeCanvasRef.current.toDataURL('image/png')); setZoomedImage('slope'); } };
 
             const drawSlopeCanvas = () => {
                 const canvas = slopeCanvasRef.current; if (!canvas) return;
                 const ctx = canvas.getContext('2d'), { a, b, c, newB, newC, count, interval } = slopeResults;
-                ctx.clearRect(0, 0, canvas.width, canvas.height); 
-                if (toNum(slopeW) <= 0 || toNum(slopePitch) <= 0) return;
-                const padding = {l:140, r:140, t:120, b:140}, scaleX = (canvas.width - (padding.l + padding.r)) / (newB || 1);
-                const maxHeight = Math.max(a, newC, c);
-                const scaleY = (canvas.height - (padding.t + padding.b)) / (maxHeight || 1);
-                const tx = (x) => padding.l + x * scaleX, ty = (y) => canvas.height - padding.b - y * scaleY;
-                ctx.beginPath(); ctx.strokeStyle = '#1c1c1e'; ctx.lineWidth = 1;
-                for(let j=0; j<=maxHeight; j+=maxHeight/4) { ctx.moveTo(tx(0), ty(j)); ctx.lineTo(tx(newB), ty(j)); } ctx.stroke();
-                ctx.beginPath(); ctx.strokeStyle = '#0a84ff'; ctx.lineWidth = 4;
-                ctx.moveTo(tx(0), ty(0)); ctx.lineTo(tx(newB), ty(0)); ctx.stroke();
-                for (let i = 0; i <= count; i++) {
-                    const cx = i * interval, cy = a + ((newC - a) / newB) * cx;
-                    ctx.beginPath(); ctx.strokeStyle = (i === 0 || i === count) ? '#30d158' : '#2c2c2e'; ctx.lineWidth = (i === 0 || i === count) ? 3 : 1.5;
-                    ctx.moveTo(tx(cx), ty(0)); ctx.lineTo(tx(cx), ty(cy)); ctx.stroke();
-                }
+                ctx.clearRect(0, 0, canvas.width, canvas.height); if (toNum(slopeW) <= 0 || toNum(slopePitch) <= 0) return;
+                const padding = {l:140, r:140, t:120, b:140}, scaleX = (canvas.width - (padding.l + padding.r)) / (newB || 1), maxHeight = Math.max(a, newC, c), scaleY = (canvas.height - (padding.t + padding.b)) / (maxHeight || 1), tx = (x) => padding.l + x * scaleX, ty = (y) => canvas.height - padding.b - y * scaleY;
+                ctx.beginPath(); ctx.strokeStyle = '#1c1c1e'; ctx.lineWidth = 1; for(let j=0; j<=maxHeight; j+=maxHeight/4) { ctx.moveTo(tx(0), ty(j)); ctx.lineTo(tx(newB), ty(j)); } ctx.stroke();
+                ctx.beginPath(); ctx.strokeStyle = '#0a84ff'; ctx.lineWidth = 4; ctx.moveTo(tx(0), ty(0)); ctx.lineTo(tx(newB), ty(0)); ctx.stroke();
+                for (let i = 0; i <= count; i++) { const cx = i * interval, cy = a + ((newC - a) / newB) * cx; ctx.beginPath(); ctx.strokeStyle = (i === 0 || i === count) ? '#30d158' : '#2c2c2e'; ctx.lineWidth = (i === 0 || i === count) ? 3 : 1.5; ctx.moveTo(tx(cx), ty(0)); ctx.lineTo(tx(cx), ty(cy)); ctx.stroke(); }
                 ctx.setLineDash([15, 10]); ctx.strokeStyle = '#ff453a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(tx(b), ty(0)); ctx.lineTo(tx(b), ty(c)); ctx.stroke(); ctx.setLineDash([]);
-                ctx.font = "bold 32px sans-serif"; ctx.fillStyle = "#ff453a"; ctx.textAlign = "center";
-                ctx.fillText(`元W: ${Math.round(b).toLocaleString()}`, tx(b), canvas.height - padding.b + 110);
-                ctx.beginPath(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 8; ctx.lineJoin = "round"; ctx.lineCap = "round";
-                ctx.moveTo(tx(0), ty(a)); ctx.lineTo(tx(newB), ty(newC)); ctx.stroke();
-                ctx.font = "bold 38px sans-serif"; ctx.fillStyle = "#30d158"; ctx.textAlign = "center";
-                ctx.fillText(`L1: ${Math.round(a).toLocaleString()}`, tx(0), ty(a) - 35); ctx.fillText(`L2: ${Math.round(newC).toLocaleString()}`, tx(newB), ty(newC) - 35);
-                ctx.font = "bold 34px sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = "#0a84ff";
-                ctx.fillText(`幅: ${Math.round(newB).toLocaleString()}`, tx(newB / 2), canvas.height - padding.b + 65);
+                ctx.font = "bold 32px sans-serif"; ctx.fillStyle = "#ff453a"; ctx.textAlign = "center"; ctx.fillText(`元W: ${Math.round(b).toLocaleString()}`, tx(b), canvas.height - padding.b + 110);
+                ctx.beginPath(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 8; ctx.lineJoin = "round"; ctx.lineCap = "round"; ctx.moveTo(tx(0), ty(a)); ctx.lineTo(tx(newB), ty(newC)); ctx.stroke();
+                ctx.font = "bold 38px sans-serif"; ctx.fillStyle = "#30d158"; ctx.textAlign = "center"; ctx.fillText(`L1: ${Math.round(a).toLocaleString()}`, tx(0), ty(a) - 35); ctx.fillText(`L2: ${Math.round(newC).toLocaleString()}`, tx(newB), ty(newC) - 35);
+                ctx.font = "bold 34px sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = "#0a84ff"; ctx.fillText(`幅: ${Math.round(newB).toLocaleString()}`, tx(newB / 2), canvas.height - padding.b + 65);
             };
 
             const allocInputColorClass = allocSource === 'pitch' ? 'text-[#0a84ff]' : (allocSource === 'count' ? 'text-[#30d158]' : 'text-white');
-
-            useEffect(() => {
-                localStorage.setItem('activeApp', activeApp);
-                localStorage.setItem('productName', currentProductName);
-                localStorage.setItem('stdLength', stdLength);
-                localStorage.setItem('overlap', overlap);
-                localStorage.setItem('totalDim', totalDim);
-                localStorage.setItem('cumulativeSum', cumulativeSum.toString());
-                localStorage.setItem('totalHistory', JSON.stringify(totalHistory));
-                localStorage.setItem('allocL', allocL);
-                localStorage.setItem('allocPitch', allocPitch);
-                localStorage.setItem('allocCount', allocCount);
-                localStorage.setItem('allocW', allocW);
-                localStorage.setItem('allocNo', allocNo);
-                localStorage.setItem('allocCumulativeSum', allocCumulativeSum.toString());
-                localStorage.setItem('allocSumHistory', JSON.stringify(allocSumHistory));
-                if(allocSource) localStorage.setItem('allocSource', allocSource);
-                localStorage.setItem('kanaPitch', kanaPitch);
-                localStorage.setItem('kanaCount', kanaCount);
-                localStorage.setItem('kanaLength', kanaLength);
-                localStorage.setItem('slopeL1', slopeL1);
-                localStorage.setItem('slopeL2', slopeL2);
-                localStorage.setItem('slopeW', slopeW);
-                localStorage.setItem('slopePitch', slopePitch);
-                localStorage.setItem('tfSize', tfSize);
-                localStorage.setItem('tfTotalL', tfTotalL);
-                localStorage.setItem('gradient_calc_history', JSON.stringify(history));
-                localStorage.setItem('waritsuke_history', JSON.stringify(allocHistory));
-                localStorage.setItem('area_calc_data_v20_ipad', JSON.stringify(areaSavedData));
-            }, [activeApp, currentProductName, stdLength, overlap, totalDim, cumulativeSum, totalHistory, allocL, allocPitch, allocCount, allocW, allocNo, allocSource, kanaPitch, kanaCount, kanaLength, slopeL1, slopeL2, slopeW, slopePitch, tfSize, tfTotalL, history, allocHistory, allocCumulativeSum, allocSumHistory, areaSavedData]);
-
-            useEffect(() => { if (activeApp === 'slope') drawSlopeCanvas(); }, [activeApp, slopeResults]);
-
-            useEffect(() => {
-                const handleClickOutside = (event) => {
-                    if (allocMemoDropdownRef.current && !allocMemoDropdownRef.current.contains(event.target) &&
-                        allocMemoBtnRef.current && !allocMemoBtnRef.current.contains(event.target)) {
-                        setIsAllocMemoDropdownOpen(false);
-                    }
-                    if (productDropdownRef.current && !productDropdownRef.current.contains(event.target) &&
-                        productBtnRef.current && !productBtnRef.current.contains(event.target)) {
-                        setIsProductDropdownOpen(false);
-                    }
-                };
-                document.addEventListener("mousedown", handleClickOutside);
-                document.addEventListener("touchstart", handleClickOutside, { passive: true });
-                return () => {
-                    document.removeEventListener("mousedown", handleClickOutside);
-                    document.removeEventListener("touchstart", handleClickOutside);
-                };
-            }, []);
 
             const touchStartX = useRef(0);
             const touchStartY = useRef(0);
@@ -1285,7 +926,7 @@
                 const handleStart = (e) => { touchStartX.current = e.touches[0].clientX; touchStartY.current = e.touches[0].clientY; };
                 const handleEnd = (e) => {
                     if (['INPUT', 'BUTTON', 'SELECT', 'CANVAS'].includes(e.target.tagName)) return;
-                    if (activeApp === 'area') return; // 面積計算中はスワイプ遷移を無効化
+                    if (activeApp === 'area') return; 
                     const deltaX = touchStartX.current - e.changedTouches[0].clientX;
                     const deltaY = Math.abs(touchStartY.current - e.changedTouches[0].clientY);
                     if (deltaY < 80 && Math.abs(deltaX) > 100) {
@@ -1302,7 +943,6 @@
             return (
                 <div ref={mainRef} className="flex flex-col bg-black h-full overflow-hidden">
                     {toastMsg && <div className="toast-msg" style={{opacity: 1}}>{toastMsg}</div>}
-                    
                     <header className="px-4 sm:px-6 py-3 flex items-center justify-between border-b border-zinc-800 bg-[#111] z-[100] shadow-md flex-shrink-0 relative">
                         <div className="flex items-center gap-3 sm:gap-6 w-full">
                             <h1 className="text-[18px] sm:text-[20px] font-bold text-white whitespace-nowrap tracking-tight hidden md:block uppercase">KYOWA ROOF</h1>
@@ -1312,15 +952,11 @@
                                 ))}
                             </nav>
                         </div>
-                        <div className="flex items-center gap-3 shrink-0 ml-2">
-                            <p className="hidden lg:block text-[14px] text-zinc-500 font-bold uppercase tracking-widest">KYOWA ROOF</p>
-                        </div>
                     </header>
 
                     <main className="flex-1 p-4 sm:p-6 bg-black relative overflow-hidden">
                         <div className="max-w-7xl mx-auto h-full overflow-hidden">
                             <div className="animate-fade-in h-full overflow-hidden">
-                                
                                 {activeApp === 'calc' && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full overflow-hidden text-[14px]">
                                         <div className="space-y-4 pr-1 md:overflow-y-auto scrollbar-hide pb-10">
@@ -1328,66 +964,35 @@
                                                 <div className="grid grid-cols-2 gap-2">
                                                     <div className="relative flex items-center z-20">
                                                         <span className="absolute left-4 text-[14px] font-bold tracking-wider text-gray-400 pointer-events-none z-10">長さ</span>
-                                                        <input 
-                                                            ref={stdLengthRef} type="text" inputMode="decimal" value={format(stdLength)} 
-                                                            onFocus={handleFocus} onChange={(e) => setStdLength(unformat(e.target.value))} 
-                                                            onKeyDown={(e) => handleEnterKey(e, overlapRef)}
-                                                            className="alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c] font-medium" placeholder="0" style={{ textAlign: 'center', paddingLeft: '3.5rem', paddingRight: '2rem' }}
-                                                        />
+                                                        <input ref={stdLengthRef} type="text" inputMode="decimal" value={format(stdLength)} onFocus={handleFocus} onChange={(e) => setStdLength(unformat(e.target.value))} onKeyDown={(e) => handleEnterKey(e, overlapRef)} className="alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c] font-medium" placeholder="0" style={{ textAlign: 'center', paddingLeft: '3.5rem', paddingRight: '2rem' }} />
                                                         <div className="absolute right-2 p-1 text-zinc-500 pointer-events-none z-10"><Icon name="chevron" size={16} /></div>
                                                         <select value={stdLength} onChange={(e) => setStdLength(e.target.value)} className="absolute right-0 w-12 h-full opacity-0 cursor-pointer z-20"><option value="" disabled>選択</option><option value="2000">2,000</option><option value="2500">2,500</option><option value="3000">3,000</option><option value="4000">4,000</option></select>
                                                     </div>
                                                     <div className="relative flex items-center z-20">
                                                         <span className="absolute left-4 text-[14px] font-bold tracking-wider text-gray-400 pointer-events-none z-10">重ね</span>
-                                                        <input 
-                                                            ref={overlapRef} type="text" inputMode="decimal" value={format(overlap)} 
-                                                            onFocus={handleFocus} onChange={(e) => setOverlap(unformat(e.target.value))} 
-                                                            onKeyDown={(e) => handleEnterKey(e, totalDimRef)}
-                                                            className="alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c] font-medium" placeholder="0" style={{ textAlign: 'center', paddingLeft: '3.5rem', paddingRight: '2rem' }}
-                                                        />
+                                                        <input ref={overlapRef} type="text" inputMode="decimal" value={format(overlap)} onFocus={handleFocus} onChange={(e) => setOverlap(unformat(e.target.value))} onKeyDown={(e) => handleEnterKey(e, totalDimRef)} className="alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c] font-medium" placeholder="0" style={{ textAlign: 'center', paddingLeft: '3.5rem', paddingRight: '2rem' }} />
                                                         <div className="absolute right-2 p-1 text-zinc-500 pointer-events-none z-10"><Icon name="chevron" size={16} /></div>
                                                         <select value={overlap} onChange={(e) => setOverlap(e.target.value)} className="absolute right-0 w-12 h-full opacity-0 cursor-pointer z-20"><option value="" disabled>選択</option><option value="30">30</option><option value="50">50</option><option value="70">70</option><option value="100">100</option></select>
                                                     </div>
                                                 </div>
-                                                
                                                 <div>
                                                     <div className="relative flex items-center mb-1.5 z-20 mt-1.5">
                                                         <span className="absolute left-4 text-[14px] font-bold tracking-wider text-gray-400 pointer-events-none z-10">距離</span>
-                                                        <input 
-                                                            ref={totalDimRef} type="text" inputMode="decimal" value={format(totalDim)} 
-                                                            onFocus={handleFocus} onChange={(e) => setTotalDim(unformat(e.target.value))} 
-                                                            onKeyDown={(e) => handleEnterKey(e, calcInputRef)}
-                                                            className="alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c] font-bold" placeholder="取付け距離" style={{ textAlign: 'center', paddingLeft: '3.5rem', paddingRight: '2.5rem' }}
-                                                        />
+                                                        <input ref={totalDimRef} type="text" inputMode="decimal" value={format(totalDim)} onFocus={handleFocus} onChange={(e) => setTotalDim(unformat(e.target.value))} onKeyDown={(e) => handleEnterKey(e, calcInputRef)} className="alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c] font-bold" placeholder="取付け距離" style={{ textAlign: 'center', paddingLeft: '3.5rem', paddingRight: '2.5rem' }} />
                                                         {totalDim && <button className="absolute right-2 p-2 text-zinc-500 opacity-60 z-10" onClick={clearDistance}><Icon name="x" size={20} /></button>}
                                                     </div>
                                                     <div className="flex gap-2">
-                                                        <div className="relative flex-grow flex items-center z-20">
-                                                            <input 
-                                                                ref={calcInputRef} type="text" inputMode="decimal" value={format(calcInput)} 
-                                                                onFocus={handleFocus} onChange={(e) => setCalcInput(unformat(e.target.value))} 
-                                                                onKeyDown={(e) => e.key === 'Enter' && addValue()}
-                                                                className="alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c]" placeholder="＋加算" 
-                                                            />
-                                                        </div>
+                                                        <div className="relative flex-grow flex items-center z-20"><input ref={calcInputRef} type="text" inputMode="decimal" value={format(calcInput)} onFocus={handleFocus} onChange={(e) => setCalcInput(unformat(e.target.value))} onKeyDown={(e) => e.key === 'Enter' && addValue()} className="alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c]" placeholder="＋加算" /></div>
                                                         <button onClick={addValue} className="w-12 h-[2.8rem] btn-3d btn-3d-orange text-white rounded-xl flex items-center justify-center text-[22px] font-bold shrink-0 shadow-lg">＋</button>
                                                         <button onClick={clearCalcInputs} className="w-16 h-[2.8rem] btn-3d btn-3d-gray text-white rounded-xl flex items-center justify-center text-[14px] leading-[1.1] font-bold shrink-0 text-center px-1 shadow-lg">全クリア</button>
                                                     </div>
                                                 </div>
                                             </section>
-                                            
                                             <div className="bg-[#1c1c1e] p-3 rounded-[20px] space-y-3 shadow-xl border border-zinc-800">
                                                 <div className="relative z-20">
                                                     <div className="relative flex items-center">
                                                         <span className="absolute left-4 text-[14px] font-bold tracking-wider text-gray-400 pointer-events-none z-10">品名</span>
-                                                        <input 
-                                                            ref={productNameRef} type="text" value={currentProductName} 
-                                                            onFocus={handleFocus} onChange={(e) => setCurrentProductName(e.target.value)} 
-                                                            onKeyDown={(e) => handleEnterKey(e, stdLengthRef)}
-                                                            className="alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c]" 
-                                                            style={{ textAlign: 'center', paddingLeft: '3.5rem', paddingRight: '2.5rem' }} 
-                                                            autoComplete="off" placeholder=""
-                                                        />
+                                                        <input ref={productNameRef} type="text" value={currentProductName} onFocus={handleFocus} onChange={(e) => setCurrentProductName(e.target.value)} onKeyDown={(e) => handleEnterKey(e, stdLengthRef)} className="alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c]" style={{ textAlign: 'center', paddingLeft: '3.5rem', paddingRight: '2.5rem' }} autoComplete="off" placeholder="" />
                                                         <button ref={productBtnRef} onClick={(e) => { e.preventDefault(); setIsProductDropdownOpen(!isProductDropdownOpen); }} className="absolute right-2 p-2 text-[#ff9f0a] focus:outline-none z-10" tabIndex="-1"><Icon name="chevron" size={20} className={isProductDropdownOpen ? 'rotate-180 transition-transform' : 'transition-transform'} /></button>
                                                         {isProductDropdownOpen && (
                                                             <div ref={productDropdownRef} className="absolute top-[110%] left-0 w-full bg-[#2c2c2e] border border-[#545458] rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.8)] z-50 overflow-hidden">
@@ -1400,76 +1005,42 @@
                                                 </div>
                                                 <button onClick={saveToHistoryManually} className="w-full py-2.5 btn-3d btn-3d-orange rounded-xl active:opacity-60 transition-all flex items-center justify-center gap-2 text-[16px] font-bold shadow-lg">履歴に保存</button>
                                             </div>
-
                                             <div className="grid grid-cols-2 gap-3">
                                                 <div className="bg-zinc-900 py-3 px-4 rounded-2xl border-2 border-green-500 flex flex-col items-start shadow-lg"><span className="text-[14px] font-bold text-zinc-300 uppercase">本数</span><div className="flex items-baseline gap-1"><span className="text-3xl font-mono font-bold text-green-500">{materialResult.pieces}</span><span className="text-[14px] font-bold text-zinc-400">本</span></div></div>
                                                 <div className="bg-zinc-900 py-3 px-4 rounded-2xl border-2 border-blue-500 flex flex-col items-start shadow-lg"><span className="text-[14px] font-bold text-zinc-300 uppercase">端材寸法</span><div className="flex items-baseline gap-1"><span className="text-3xl font-mono font-bold text-blue-500">{format(materialResult.remainder)}</span><span className="text-[14px] font-bold text-zinc-400">㎜</span></div></div>
                                             </div>
                                         </div>
-
                                         <div className="space-y-4 pl-1 md:overflow-y-auto scrollbar-hide pb-10">
-                                            {/* 自動集計リスト（上部に配置） */}
                                             {Object.keys(calcSummaryByName).length > 0 && (
                                                 <div className="bg-[#1c1c1e] rounded-[20px] shadow-2xl overflow-hidden border border-[#545458] mb-4">
-                                                    <div className="bg-[#2c2c2e] py-1.5 px-4 border-b border-[#545458]">
-                                                        <h2 className="text-[14px] font-bold text-gray-300 uppercase tracking-widest">品名別 合計</h2>
-                                                    </div>
+                                                    <div className="bg-[#2c2c2e] py-1.5 px-4 border-b border-[#545458]"><h2 className="text-[14px] font-bold text-gray-300 uppercase tracking-widest">品名別 合計</h2></div>
                                                     <div className="p-1.5 space-y-1.5">
                                                         {Object.entries(calcSummaryByName).map(([key, data]) => (
                                                             <div key={key} className="bg-[#2c2c2e] py-1 px-3 rounded-xl flex flex-col gap-0 border border-[#545458]">
                                                                 <div className="flex items-center justify-between">
-                                                                    <div className="flex items-center flex-grow mr-2 overflow-hidden">
-                                                                        <div className="text-[12px] text-gray-400 font-bold whitespace-nowrap mr-2">品名</div>
-                                                                        <input 
-                                                                            type="text" defaultValue={key} 
-                                                                            onBlur={(e) => { if(e.target.value !== key) updateProductNameInHistory(key, e.target.value); }}
-                                                                            onKeyDown={(e) => { if(e.key === 'Enter') e.target.blur(); }}
-                                                                            className="alloc-editable-memo text-[14px] w-full text-left py-0" 
-                                                                            placeholder="" 
-                                                                        />
-                                                                    </div>
-                                                                    <button onClick={() => deleteByNameInHistory(key)} className="p-1 text-red-500 active:opacity-50 shrink-0">
-                                                                        <Icon name="x" size={16} />
-                                                                    </button>
+                                                                    <div className="flex items-center flex-grow mr-2 overflow-hidden"><div className="text-[12px] text-gray-400 font-bold whitespace-nowrap mr-2">品名</div><input type="text" defaultValue={key} onBlur={(e) => { if(e.target.value !== key) updateProductNameInHistory(key, e.target.value); }} onKeyDown={(e) => { if(e.key === 'Enter') e.target.blur(); }} className="alloc-editable-memo text-[14px] w-full text-left py-0" placeholder="" /></div>
+                                                                    <button onClick={() => deleteByNameInHistory(key)} className="p-1 text-red-500 active:opacity-50 shrink-0"><Icon name="x" size={16} /></button>
                                                                 </div>
-                                                                <div className="flex justify-between items-baseline px-1 pb-0.5">
-                                                                    <div className="flex items-baseline gap-1">
-                                                                        <span className="text-xl font-bold text-[#30d158] leading-none">{data.pieces}</span>
-                                                                        <span className="text-[12px] text-gray-400 font-bold">本</span>
-                                                                    </div>
-                                                                    <span className="text-[15px] font-bold text-[#0a84ff] leading-none">W: {format(data.totalDistance)} ㎜</span>
-                                                                </div>
+                                                                <div className="flex justify-between items-baseline px-1 pb-0.5"><div className="flex items-baseline gap-1"><span className="text-xl font-bold text-[#30d158] leading-none">{data.pieces}</span><span className="text-[12px] text-gray-400 font-bold">本</span></div><span className="text-[15px] font-bold text-[#0a84ff] leading-none">W: {format(data.totalDistance)} ㎜</span></div>
                                                             </div>
                                                         ))}
                                                     </div>
                                                 </div>
                                             )}
-
                                             <div className="bg-[#1c1c1e] rounded-[20px] shadow-2xl overflow-hidden border border-[#545458]">
-                                                <div className="bg-[#2c2c2e] py-1.5 px-4 flex justify-between items-center border-b border-[#545458]">
-                                                    <h2 className="text-[14px] font-bold text-gray-300 uppercase tracking-widest">計算履歴</h2>
-                                                    <button onClick={() => setIsClearModalOpen(true)} className="btn-3d btn-3d-red text-[12px] px-2.5 py-0.5 rounded-full font-bold">全削除</button>
-                                                </div>
-                                                
+                                                <div className="bg-[#2c2c2e] py-1.5 px-4 flex justify-between items-center border-b border-[#545458]"><h2 className="text-[14px] font-bold text-gray-300 uppercase tracking-widest">計算履歴</h2><button onClick={() => setIsClearModalOpen(true)} className="btn-3d btn-3d-red text-[12px] px-2.5 py-0.5 rounded-full font-bold">全削除</button></div>
                                                 {history.length > 0 && (
                                                     <div className="bg-[#1c1c1e] p-2 px-3 flex flex-col gap-2 border-b-2 border-[#545458] shadow-inner">
                                                         <div className="flex items-baseline justify-between"><span className="text-gray-400 text-[14px] font-bold uppercase tracking-wider">総距離</span><span className="text-white text-[16px] font-bold">{format(history.reduce((a,c)=>a+toNum(c.total),0))} ㎜</span></div>
                                                         <div className="flex items-center justify-between"><div className="flex items-baseline gap-2"><span className="text-gray-400 text-[14px] font-bold uppercase tracking-wider">本数</span><span className="text-xl font-bold text-[#30d158]">{history.reduce((a,c)=>a+(c.pieces||0),0)}</span></div><span className="text-[#0a84ff] text-[16px] font-bold">{format(history.reduce((a,c)=>a+(toNum(c.remainder)||0),0))} ㎜</span></div>
                                                     </div>
                                                 )}
-
                                                 <div className="space-y-0 text-gray-200">
                                                     {history.length === 0 ? <div className="text-center py-10 text-zinc-700 italic font-bold text-[14px]">履歴なし</div> : history.map(item => (
                                                         <div key={item.id} className="flex border-b border-[#545458] bg-[#1c1c1e] items-stretch">
                                                             <div className="flex-1 py-2 px-3 flex flex-col justify-center border-r border-[#545458]">
-                                                                <div className="flex justify-between items-center mb-1">
-                                                                    <span className="font-bold leading-tight" style={{fontSize: '14px', color: '#c0c0c0'}}>W:{format(item.total)}㎜</span>
-                                                                    {item.name && <span className="inline-block text-white px-1.5 py-0 rounded font-bold leading-none" style={{fontSize: '14px', backgroundColor: '#48484a'}}>{item.name}</span>}
-                                                                </div>
-                                                                <div className="flex items-center gap-4">
-                                                                    <span className="text-[16px] font-bold text-[#30d158]">{item.pieces}本</span>
-                                                                    <span className="text-[14px] font-bold text-[#8e8e93]">余り:{format(item.remainder)}㎜</span>
-                                                                </div>
+                                                                <div className="flex justify-between items-center mb-1"><span className="font-bold leading-tight" style={{fontSize: '14px', color: '#c0c0c0'}}>W:{format(item.total)}㎜</span>{item.name && <span className="inline-block text-white px-1.5 py-0 rounded font-bold leading-none" style={{fontSize: '14px', backgroundColor: '#48484a'}}>{item.name}</span>}</div>
+                                                                <div className="flex items-center gap-4"><span className="text-[16px] font-bold text-[#30d158]">{item.pieces}本</span><span className="text-[14px] font-bold text-[#8e8e93]">余り:{format(item.remainder)}㎜</span></div>
                                                             </div>
                                                             <button onClick={() => { setHistory(history.filter(i => i.id !== item.id)); }} className="w-12 text-red-500 active:opacity-50 flex items-center justify-center transition-colors"><Icon name="trash" size={18} /></button>
                                                         </div>
@@ -1479,63 +1050,33 @@
                                         </div>
                                     </div>
                                 )}
-
                                 {activeApp === 'alloc' && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full overflow-hidden text-[14px]">
                                         <div className="space-y-4 pr-1 md:overflow-y-auto scrollbar-hide pb-10">
                                             <div className="bg-[#1c1c1e] p-3 rounded-[20px] space-y-1.5 shadow-xl border border-zinc-800">
                                                 <div className="relative flex items-center z-20">
                                                     <span className="absolute left-4 text-[14px] font-bold tracking-wider text-[#ff9f0a] pointer-events-none z-10">寸法</span>
-                                                    <input 
-                                                        ref={allocLRef} type="text" inputMode="decimal" value={format(allocL)} 
-                                                        onFocus={handleFocus} onChange={(e) => setAllocL(unformat(e.target.value))} 
-                                                        onKeyDown={(e) => handleEnterKey(e, allocWRef)}
-                                                        className="alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c] text-[#ff9f0a] font-medium" placeholder="材料の長さ" style={{ textAlign: 'center', paddingLeft: '3.5rem', paddingRight: '2.5rem' }}
-                                                    />
+                                                    <input ref={allocLRef} type="text" inputMode="decimal" value={format(allocL)} onFocus={handleFocus} onChange={(e) => setAllocL(unformat(e.target.value))} onKeyDown={(e) => handleEnterKey(e, allocWRef)} className="alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c] text-[#ff9f0a] font-medium" placeholder="材料の長さ" style={{ textAlign: 'center', paddingLeft: '3.5rem', paddingRight: '2.5rem' }} />
                                                     {allocL && <button className="absolute right-2 p-2 text-zinc-500 opacity-60 z-10" onClick={() => {setAllocL(''); allocLRef.current?.focus();}}><Icon name="x" size={20} /></button>}
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-2">
                                                     <div className="relative flex items-center z-20">
                                                         <span className="absolute left-3 text-[14px] font-bold tracking-wider text-[#0a84ff] pointer-events-none z-10">働き</span>
-                                                        <input 
-                                                            ref={allocPitchRef} type="text" inputMode="decimal" value={allocSource === 'count' ? allocCalculated.countMode.w : format(allocPitch)} 
-                                                            onFocus={handleFocus} onChange={(e) => { setAllocPitch(unformat(e.target.value)); setAllocSource('pitch'); }} 
-                                                            onKeyDown={(e) => handleEnterKey(e, allocWRef)}
-                                                            className={`alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c] font-medium focus-blue ${allocSource === 'pitch' ? '!border-2 !border-[#0a84ff]' : ''} ${allocInputColorClass}`} placeholder="ピッチ" 
-                                                            style={{ textAlign: 'center', paddingLeft: '3.5rem', paddingRight: '1rem' }}
-                                                        />
+                                                        <input ref={allocPitchRef} type="text" inputMode="decimal" value={allocSource === 'count' ? allocCalculated.countMode.w : format(allocPitch)} onFocus={handleFocus} onChange={(e) => { setAllocPitch(unformat(e.target.value)); setAllocSource('pitch'); }} onKeyDown={(e) => handleEnterKey(e, allocWRef)} className={`alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c] font-medium focus-blue ${allocSource === 'pitch' ? '!border-2 !border-[#0a84ff]' : ''} ${allocInputColorClass}`} placeholder="ピッチ" style={{ textAlign: 'center', paddingLeft: '3.5rem', paddingRight: '1rem' }} />
                                                     </div>
                                                     <div className="relative flex items-center z-20">
                                                         <span className="absolute left-3 text-[14px] font-bold tracking-wider text-[#30d158] pointer-events-none z-10">数量</span>
-                                                        <input 
-                                                            ref={allocCountRef} type="text" inputMode="numeric" value={allocSource === 'pitch' ? allocCalculated.pitchMode.q : format(allocCount)} 
-                                                            onFocus={handleFocus} onChange={(e) => { setAllocCount(unformat(e.target.value)); setAllocSource('count'); }} 
-                                                            onKeyDown={(e) => handleEnterKey(e, allocWRef)}
-                                                            className={`alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c] font-medium focus-green ${allocSource === 'count' ? '!border-2 !border-[#30d158]' : ''} ${allocInputColorClass}`} placeholder="数量" 
-                                                            style={{ textAlign: 'center', paddingLeft: '3.5rem', paddingRight: '1rem' }}
-                                                        />
+                                                        <input ref={allocCountRef} type="text" inputMode="numeric" value={allocSource === 'pitch' ? allocCalculated.pitchMode.q : format(allocCount)} onFocus={handleFocus} onChange={(e) => { setAllocCount(unformat(e.target.value)); setAllocSource('count'); }} onKeyDown={(e) => handleEnterKey(e, allocWRef)} className={`alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c] font-medium focus-green ${allocSource === 'count' ? '!border-2 !border-[#30d158]' : ''} ${allocInputColorClass}`} placeholder="数量" style={{ textAlign: 'center', paddingLeft: '3.5rem', paddingRight: '1rem' }} />
                                                     </div>
                                                 </div>
                                                 <div>
                                                     <div className="relative flex items-center mb-1.5 z-20">
                                                         <span className="absolute left-4 text-[14px] font-bold tracking-wider text-gray-400 pointer-events-none z-10">全幅</span>
-                                                        <input 
-                                                            ref={allocWRef} type="text" inputMode="decimal" value={format(allocW)} 
-                                                            onFocus={handleFocus} onChange={(e) => setAllocW(unformat(e.target.value))} 
-                                                            onKeyDown={(e) => handleEnterKey(e, allocCalcInputRef)}
-                                                            className="alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c] font-bold" placeholder="施工面の張り幅" style={{ textAlign: 'center', paddingLeft: '3.5rem', paddingRight: '2.5rem' }}
-                                                        />
+                                                        <input ref={allocWRef} type="text" inputMode="decimal" value={format(allocW)} onFocus={handleFocus} onChange={(e) => setAllocW(unformat(e.target.value))} onKeyDown={(e) => handleEnterKey(e, allocCalcInputRef)} className="alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c] font-bold" placeholder="施工面の張り幅" style={{ textAlign: 'center', paddingLeft: '3.5rem', paddingRight: '2.5rem' }} />
                                                         {allocW && <button className="absolute right-2 p-2 text-zinc-500 opacity-60 z-10" onClick={() => {setAllocW(''); allocWRef.current?.focus();}}><Icon name="x" size={20} /></button>}
                                                     </div>
                                                     <div className="flex gap-2">
-                                                        <div className="relative flex-grow flex items-center z-20">
-                                                            <input 
-                                                                ref={allocCalcInputRef} type="text" inputMode="decimal" value={format(allocCalcInput)} 
-                                                                onFocus={handleFocus} onChange={(e) => setAllocCalcInput(unformat(e.target.value))} 
-                                                                onKeyDown={(e) => e.key === 'Enter' && addAllocValue()}
-                                                                className="alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c]" placeholder="＋加算" 
-                                                            />
-                                                        </div>
+                                                        <div className="relative flex-grow flex items-center z-20"><input ref={allocCalcInputRef} type="text" inputMode="decimal" value={format(allocCalcInput)} onFocus={handleFocus} onChange={(e) => setAllocCalcInput(unformat(e.target.value))} onKeyDown={(e) => e.key === 'Enter' && addAllocValue()} className="alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c]" placeholder="＋加算" /></div>
                                                         <button onClick={addAllocValue} className="w-12 h-[2.8rem] btn-3d btn-3d-orange text-white rounded-xl flex items-center justify-center text-[22px] font-bold shrink-0 shadow-lg">＋</button>
                                                         <button onClick={clearAllocInputs} className="w-16 h-[2.8rem] btn-3d btn-3d-gray text-white rounded-xl flex items-center justify-center text-[14px] leading-[1.1] font-bold shrink-0 text-center px-1 shadow-lg">全クリア</button>
                                                     </div>
@@ -1545,10 +1086,7 @@
                                                 <div className="relative z-20">
                                                     <div className="relative flex items-center">
                                                         <span className="absolute left-4 text-[14px] font-bold text-gray-400 pointer-events-none z-10">備考</span>
-                                                        <input 
-                                                            ref={allocNoRef} type="text" value={allocNo} onFocus={handleFocus} onChange={(e) => setAllocNo(e.target.value)}
-                                                            className="alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c]" style={{ textAlign: 'center', paddingLeft: '3.5rem', paddingRight: '2.5rem' }} autoComplete="off" placeholder=""
-                                                        />
+                                                        <input ref={allocNoRef} type="text" value={allocNo} onFocus={handleFocus} onChange={(e) => setAllocNo(e.target.value)} className="alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c]" style={{ textAlign: 'center', paddingLeft: '3.5rem', paddingRight: '2.5rem' }} autoComplete="off" placeholder="" />
                                                         <button ref={allocMemoBtnRef} onClick={(e) => { e.preventDefault(); setIsAllocMemoDropdownOpen(!isAllocMemoDropdownOpen); }} className="absolute right-2 p-2 text-[#ff9f0a] focus:outline-none z-10" tabIndex="-1"><Icon name="chevron" size={20} className={isAllocMemoDropdownOpen ? 'rotate-180 transition-transform' : 'transition-transform'} /></button>
                                                         {isAllocMemoDropdownOpen && (
                                                             <div ref={allocMemoDropdownRef} className="absolute top-[110%] left-0 w-full bg-[#2c2c2e] border border-[#545458] rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.8)] z-50 overflow-hidden">
@@ -1586,15 +1124,7 @@
                                                         {Object.entries(allocSummaryByMemo).map(([key, data]) => (
                                                             <div key={key} className="bg-[#2c2c2e] p-2 px-3 rounded-xl flex flex-col gap-2 border border-[#545458]">
                                                                 <div className="flex items-center justify-between">
-                                                                    <div className="flex items-center flex-grow mr-2 overflow-hidden">
-                                                                        <div className="text-[12px] text-gray-400 font-bold whitespace-nowrap mr-2">備考</div>
-                                                                        <input 
-                                                                            type="text" defaultValue={key} 
-                                                                            onBlur={(e) => { if(e.target.value !== key) updateRemarkNameInAllocHistory(key, e.target.value); }}
-                                                                            onKeyDown={(e) => { if(e.key === 'Enter') e.target.blur(); }}
-                                                                            className="alloc-editable-memo text-[14px] w-full text-left" placeholder="" 
-                                                                        />
-                                                                    </div>
+                                                                    <div className="flex items-center flex-grow mr-2 overflow-hidden"><div className="text-[12px] text-gray-400 font-bold whitespace-nowrap mr-2">備考</div><input type="text" defaultValue={key} onBlur={(e) => { if(e.target.value !== key) updateRemarkNameInAllocHistory(key, e.target.value); }} onKeyDown={(e) => { if(e.key === 'Enter') e.target.blur(); }} className="alloc-editable-memo text-[14px] w-full text-left" placeholder="" /></div>
                                                                     <button onClick={() => deleteByRemarkInAllocHistory(key)} className="p-1 text-red-500 active:opacity-50 shrink-0"><Icon name="x" size={18} /></button>
                                                                 </div>
                                                                 <div className="grid grid-cols-2 gap-2">
@@ -1617,14 +1147,9 @@
                                                                     <td className="py-1 px-1 border-r border-[#545458] cursor-pointer active:bg-[#3a3a3c]" onClick={() => loadAllocHistoryToInput(item, 'pitch')}>
                                                                         {item.source === 'pitch' ? (
                                                                             <div className="flex flex-col items-center justify-center leading-[1.1]">
-                                                                                <div className="flex items-center justify-center gap-1 mb-1 w-full max-w-[140px] overflow-hidden">
-                                                                                    {item.no ? <span className="inline-block text-white px-1.5 py-0.5 rounded font-bold leading-none truncate" style={{fontSize: '14px', backgroundColor: '#48484a', maxWidth: '100%'}}>{item.no}</span> : <span className="invisible" style={{fontSize: '14px'}}>-</span>}
-                                                                                </div>
+                                                                                <div className="flex items-center justify-center gap-1 mb-1 w-full max-w-[140px] overflow-hidden">{item.no ? <span className="inline-block text-white px-1.5 py-0.5 rounded font-bold leading-none truncate" style={{fontSize: '14px', backgroundColor: '#48484a', maxWidth: '100%'}}>{item.no}</span> : <span className="invisible" style={{fontSize: '14px'}}>-</span>}</div>
                                                                                 <div className="font-bold leading-tight" style={{fontSize: '14px', color: '#c0c0c0'}}>W:{item.L}</div>
-                                                                                <div className="flex items-baseline justify-center gap-1.5 my-[2px]">
-                                                                                    {item.memoL && <span className="font-medium truncate leading-tight" style={{fontSize: '14px', color: '#ff9f0a'}}>L:{item.memoL}</span>}
-                                                                                    <span className="font-bold leading-none" style={{fontSize: '16px', color: '#0a84ff'}}>{item.q}枚</span>
-                                                                                </div>
+                                                                                <div className="flex items-baseline justify-center gap-1.5 my-[2px]">{item.memoL && <span className="font-medium truncate leading-tight" style={{fontSize: '14px', color: '#ff9f0a'}}>L:{item.memoL}</span>}<span className="font-bold leading-none" style={{fontSize: '16px', color: '#0a84ff'}}>{item.q}枚</span></div>
                                                                                 <div className="leading-tight" style={{fontSize: '14px', color: '#8e8e93'}}>@{item.pitch} 残:{item.rem}</div>
                                                                             </div>
                                                                         ) : <div style={{fontSize: '14px', color: '#8e8e93'}}>-</div>}
@@ -1632,14 +1157,9 @@
                                                                     <td className="py-1 px-1 border-r border-[#545458] cursor-pointer active:bg-[#3a3a3c]" onClick={() => loadAllocHistoryToInput(item, 'count')}>
                                                                         {item.source === 'count' ? (
                                                                             <div className="flex flex-col items-center justify-center leading-[1.1]">
-                                                                                <div className="flex items-center justify-center gap-1 mb-1 w-full max-w-[140px] overflow-hidden">
-                                                                                    {item.no ? <span className="inline-block text-white px-1.5 py-0.5 rounded font-bold leading-none truncate" style={{fontSize: '14px', backgroundColor: '#48484a', maxWidth: '100%'}}>{item.no}</span> : <span className="invisible" style={{fontSize: '14px'}}>-</span>}
-                                                                                </div>
+                                                                                <div className="flex items-center justify-center gap-1 mb-1 w-full max-w-[140px] overflow-hidden">{item.no ? <span className="inline-block text-white px-1.5 py-0.5 rounded font-bold leading-none truncate" style={{fontSize: '14px', backgroundColor: '#48484a', maxWidth: '100%'}}>{item.no}</span> : <span className="invisible" style={{fontSize: '14px'}}>-</span>}</div>
                                                                                 <div className="font-bold leading-tight" style={{fontSize: '14px', color: '#c0c0c0'}}>W:{item.L}</div>
-                                                                                <div className="flex items-baseline justify-center gap-1.5 my-[2px]">
-                                                                                    {item.memoL && <span className="font-medium truncate leading-tight" style={{fontSize: '14px', color: '#ff9f0a'}}>L:{item.memoL}</span>}
-                                                                                    <span className="font-bold leading-none" style={{fontSize: '16px', color: '#30d158'}}>{item.q}枚</span>
-                                                                                </div>
+                                                                                <div className="flex items-baseline justify-center gap-1.5 my-[2px]">{item.memoL && <span className="font-medium truncate leading-tight" style={{fontSize: '14px', color: '#ff9f0a'}}>L:{item.memoL}</span>}<span className="font-bold leading-none" style={{fontSize: '16px', color: '#30d158'}}>{item.q}枚</span></div>
                                                                                 <div className="leading-tight" style={{fontSize: '14px', color: '#8e8e93'}}>@{item.count}㎜ 残:{item.rem}</div>
                                                                             </div>
                                                                         ) : <div style={{fontSize: '14px', color: '#8e8e93'}}>-</div>}
@@ -1655,23 +1175,20 @@
                                         </div>
                                     </div>
                                 )}
-
                                 {activeApp === 'tightframe' && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full overflow-hidden">
                                         <div className="space-y-6 pr-1 md:overflow-y-auto scrollbar-hide pb-10">
                                             <div className="ios-card-base p-4 space-y-3 shadow-2xl">
                                                 <div className="grid grid-cols-2 gap-3">
-                                                    <div className="unified-input-row focus-orange relative border-[#38383a]"><span className="unified-label-left text-gray-400">サイズ</span><select value={tfSize} onChange={(e) => setTfSize(e.target.value)} className="unified-input-center text-white appearance-none pr-6 bg-transparent outline-none"><option value="600" className="bg-zinc-800">600</option><option value="500" className="bg-zinc-800">500</option><option value="1000" className="bg-zinc-800">1000</option></select><div className="absolute right-2 top-0 bottom-0 flex items-center justify-center text-zinc-500 pointer-events-none"><Icon name="chevron" size={16} /></div></div>
+                                                    <div className="unified-input-row focus-orange relative border-[#38383a]"><span className="unified-label-left text-gray-400">サイズ</span><select value={tfSize} onChange={(e) => setTfSize(e.target.value)} className="unified-input-center text-white appearance-none pr-6 bg-transparent outline-none"><option value="600">600</option><option value="500">500</option><option value="1000">1000</option></select><div className="absolute right-2 top-0 bottom-0 flex items-center justify-center text-zinc-500 pointer-events-none"><Icon name="chevron" size={16} /></div></div>
                                                     <div className="unified-input-row border-dashed border-[#38383a] bg-[#000000] pointer-events-none"><span className="unified-label-left text-gray-400 w-auto pr-1 whitespace-nowrap">全長芯</span><input type="text" readOnly value={format(tfResults.centerL)} className="unified-input-center text-gray-400 border-none outline-none" placeholder="-" /></div>
                                                 </div>
                                                 <div className="flex gap-2">
-                                                    <div className="unified-input-row focus-orange flex-1"><span className="unified-label-left text-gray-400 w-auto pr-2 whitespace-nowrap">全長</span><input ref={tfTotalLRef} type="text" inputMode="decimal" value={format(tfTotalL)} onFocus={handleFocus} onChange={(e) => setTfTotalL(unformat(e.target.value))} onKeyDown={(e) => {if(e.key==='Enter') e.target.blur()}} className="unified-input-center text-white" placeholder="数値を入力" /></div>
+                                                    <div className="unified-input-row focus-orange flex-1"><span className="unified-label-left w-auto pr-2 whitespace-nowrap">全長</span><input ref={tfTotalLRef} type="text" inputMode="decimal" value={format(tfTotalL)} onFocus={handleFocus} onChange={(e) => setTfTotalL(unformat(e.target.value))} onKeyDown={(e) => {if(e.key==='Enter') e.target.blur()}} className="unified-input-center text-white" placeholder="数値を入力" /></div>
                                                     <button onClick={() => { setTfTotalL(''); setTfSize('600'); }} className="w-24 h-[3rem] btn-3d btn-3d-zinc text-white font-bold text-[13px] shrink-0">リセット</button>
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-3"><div className="flex items-baseline justify-center gap-2 py-2 text-center"><span className="text-[14px] text-gray-500 font-bold uppercase">山寸法</span><span className="text-xl font-bold text-gray-300">{format(tfResults.yamaDim)}</span></div><div className="flex items-baseline justify-center gap-2 py-2 text-center"><span className="text-[14px] text-gray-500 font-bold uppercase">谷寸法</span><span className="text-xl font-bold text-gray-300">{format(tfResults.taniDim)}</span></div></div>
-                                                <div className="mt-3 rounded-xl overflow-hidden border border-[#38383a] bg-[#000000] flex justify-center py-4 cursor-pointer active:opacity-70 transition-opacity relative" onClick={() => setZoomedImage('tightframe')}>
-                                                    <RoofProfileSVG size={tfSize} />
-                                                </div>
+                                                <div className="mt-3 rounded-xl overflow-hidden border border-[#38383a] bg-[#000000] flex justify-center py-4 cursor-pointer active:opacity-70 transition-opacity relative" onClick={() => setZoomedImage('tightframe')}><RoofProfileSVG size={tfSize} /></div>
                                             </div>
                                             <div className="space-y-4">
                                                 <h3 className="text-[18px] font-bold text-[#ff9f0a] uppercase tracking-widest ml-1">端部 基準寸法</h3>
@@ -1687,7 +1204,6 @@
                                         </div>
                                     </div>
                                 )}
-
                                 {activeApp === 'kanamono' && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full overflow-hidden">
                                         <div className="space-y-6 pr-1 md:overflow-y-auto scrollbar-hide pb-10">
@@ -1703,11 +1219,10 @@
                                         </div>
                                         <div className="space-y-4 pl-1 md:overflow-y-auto scrollbar-hide pb-10">
                                             <div className="flex justify-between items-center px-1"><h3 className="text-[18px] font-bold text-zinc-300 uppercase tracking-widest">割付墨出し寸法</h3></div>
-                                            <div className="bg-[#1c1c1e] rounded-xl border border-zinc-800 overflow-hidden shadow-2xl animate-fade-in"><div className="bg-zinc-800 p-3 flex justify-between items-center border-b border-zinc-700"><h2 className="text-base font-bold text-white uppercase">割付寸法</h2><span className="bg-[#f97316] px-3 py-1 rounded-full text-black font-bold text-[14px] whitespace-nowrap uppercase font-bold">W {format(kanaLength)} ㎜</span></div><div className="w-full"><table className="history-table"><thead><tr className="bg-[#2c2c2e]"><th className="text-[#0a84ff] border-r border-[#545458] w-1/2 font-bold uppercase py-2">働き位置</th><th className="text-[#30d158] font-bold w-1/2 uppercase py-2">本数位置</th></tr></thead><tbody className="text-center font-bold text-lg">{kanamonoTableData.length === 0 ? <tr><td colSpan="2" className="py-20 text-zinc-600 italic font-bold text-[14px]">データなし</td></tr> : (<>{kanamonoTableData.map((row, idx) => (<tr key={idx} className="border-b border-[#545458]"><td className="py-2 border-r border-[#545458] text-[#0a84ff]">{row.q !== undefined ? format(row.q) : '-'}</td><td className="py-2 text-[#30d158]">{row.n !== undefined ? format(row.n) : '-'}</td></tr>))}<tr className="bg-[#2c2c2e] font-bold border-t-2 border-[#545458] text-zinc-400"><td className="py-2 border-r border-[#545458]">{kanamonoResults.resQ.val !== '-' && (<div className="flex flex-col gap-0.5"><div className="text-[14px]">余り: {format(kanamonoLastRem.qRem)}㎜</div><div className="text-[16px]">計: {kanamonoResults.resQ.val}本</div></div>)}</td><td className="py-2">{kanamonoResults.resW.val !== '-' && (<div className="flex flex-col gap-0.5"><div className="text-[14px]">余り: {format(kanamonoLastRem.nRem)}㎜</div><div className="text-[16px]">計: {format(kanaCount)}本</div></div>)}</td></tr></>)}</tbody></table></div></div>
+                                            <div className="bg-[#1c1c1e] rounded-xl border border-zinc-800 overflow-hidden shadow-2xl animate-fade-in"><div className="bg-zinc-800 p-3 flex justify-between items-center border-b border-zinc-700"><h2 className="text-base font-bold text-white uppercase">割付寸法</h2><span className="bg-[#f97316] px-3 py-1 rounded-full text-black font-bold text-[14px] whitespace-nowrap uppercase font-bold">W {format(kanaLength)} ㎜</span></div><div className="w-full"><table className="history-table"><thead><tr className="bg-[#2c2c2e]"><th className="text-[#0a84ff] border-r border-[#545458] w-1/2 font-bold uppercase py-2">働き位置</th><th className="text-[#30d158] font-bold w-1/2 uppercase py-2">本数位置</th></tr></thead><tbody className="text-center font-bold text-lg">{kanamonoTableData.length === 0 ? <tr><td colSpan="2" className="py-20 text-zinc-600 italic font-bold text-[14px]">データなし</td></tr> : (<>{kanamonoTableData.map((row, idx) => (<tr key={idx} className="border-b border-[#545458]"><td className="py-2 border-r border-[#545458] text-[#0a84ff]">{row.q !== undefined ? format(row.q) : '-'}</td><td className="py-2 text-[#30d158]">{row.n !== undefined ? format(row.n) : '-'}</td></tr>))}<tr className="bg-[#2c2c2e] font-bold border-t-2 border-[#545458] text-zinc-400"><td className="py-2 border-r border-[#545458]">{kanamonoResults.resQ.val !== '-' && (<div><div className="text-[14px]">余り: {format(kanamonoLastRem.qRem)}㎜</div><div className="text-[16px]">計: {kanamonoResults.resQ.val}本</div></div>)}</td><td className="py-2">{kanamonoResults.resW.val !== '-' && (<div><div className="text-[14px]">余り: {format(kanamonoLastRem.nRem)}㎜</div><div className="text-[16px]">計: {format(kanaCount)}本</div></div>)}</td></tr></>)}</tbody></table></div></div>
                                         </div>
                                     </div>
                                 )}
-
                                 {activeApp === 'slope' && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full overflow-hidden">
                                         <div className="space-y-6 pr-1 md:overflow-y-auto scrollbar-hide pb-10">
@@ -1730,34 +1245,22 @@
                                             </div>
                                         </div>
                                         <div className="space-y-4 pl-1 md:overflow-y-auto scrollbar-hide pb-10">
-                                            <div className="canvas-container shadow-2xl bg-black aspect-video cursor-pointer active:opacity-70 transition-opacity relative" onClick={openSlopeZoom}>
-                                                <canvas ref={slopeCanvasRef} width="1200" height="700"></canvas>
-                                            </div>
+                                            <div className="canvas-container shadow-2xl bg-black aspect-video cursor-pointer active:opacity-70 transition-opacity relative" onClick={openSlopeZoom}><canvas ref={slopeCanvasRef} width="1200" height="700"></canvas></div>
                                             <div className="ios-card-base overflow-hidden flex-shrink-0"><div className="bg-zinc-800 p-2 text-center text-[14px] font-bold text-zinc-400 uppercase">勾配寸法表</div><table className="history-table text-center w-full"><thead><tr className="bg-[#2c2c2e] sticky top-0"><th className="text-[#ff9f0a] font-bold uppercase py-2">No.</th><th className="text-[#0a84ff] font-bold uppercase py-2">働き</th><th className="text-[#30d158] font-bold uppercase py-2">長さ</th></tr></thead><tbody>{slopeResults.table.map(row => (<tr key={row.i} className="border-b border-[#38383a]"><td className="py-2 text-[#ff9f0a] font-bold text-[20px]">{row.i}</td><td className="text-[#0a84ff] font-bold text-[20px]">{format(row.dist)}</td><td className="text-[#30d158] font-bold text-[20px]">{format(row.height)}</td></tr>))}</tbody></table></div>
                                         </div>
                                     </div>
                                 )}
-
-                                {/* --- 面積計算アプリ --- */}
-                                {activeApp === 'area' && (
-                                    <AreaApp areaStateRef={areaStateRef} savedData={areaSavedData} setSavedData={setAreaSavedData} showToast={showToast} />
-                                )}
+                                {activeApp === 'area' && ( <AreaApp areaStateRef={areaStateRef} savedData={areaSavedData} setAreaSavedData={setAreaSavedData} showToast={showToast} /> )}
                             </div>
                         </div>
                     </main>
-
-                    {/* 画像拡大モーダル */}
                     {zoomedImage && (
                         <div className="fixed inset-0 z-[300] flex flex-col items-center justify-center bg-black/90 backdrop-blur-sm px-4 animate-fade-in" onClick={() => setZoomedImage(null)}>
                             <button onClick={() => setZoomedImage(null)} className="absolute top-6 right-6 bg-zinc-800 text-white rounded-full p-2 z-[310] shadow-lg border border-zinc-700 active:scale-95 transition-all"><Icon name="x" size={24} /></button>
-                            <div className="w-full max-w-4xl max-h-[80vh] flex items-center justify-center overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                                {zoomedImage === 'tightframe' && (<div className="w-full bg-black p-4 rounded-2xl border border-zinc-700 shadow-2xl"><RoofProfileSVG size={tfSize} /></div>)}
-                                {zoomedImage === 'slope' && slopeImageUrl && (<img src={slopeImageUrl} alt="Slope Zoom" className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl border border-zinc-700" />)}
-                            </div>
+                            <div className="w-full max-w-4xl max-h-[80vh] flex items-center justify-center overflow-hidden" onClick={(e) => e.stopPropagation()}> {zoomedImage === 'tightframe' && (<div className="w-full bg-black p-4 rounded-2xl border border-zinc-700 shadow-2xl"><RoofProfileSVG size={tfSize} /></div>)} {zoomedImage === 'slope' && slopeImageUrl && (<img src={slopeImageUrl} alt="Slope Zoom" className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl border border-zinc-700" />)} </div>
                             <p className="text-zinc-500 font-bold mt-6 text-[14px]">タップして閉じる</p>
                         </div>
                     )}
-
                     {isClearModalOpen && (
                         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
                             <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-fade-in text-center">
@@ -1774,14 +1277,5 @@
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
-
-    <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function () {
-        navigator.serviceWorker.register('./sw.js').catch(function (err) { console.log(err); });
-      });
-    }
-    </script>
-
 </body>
 </html>
