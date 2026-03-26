@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>KYOWA ROOF</title>
+    <title>材料取り 計算</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- React & ReactDOM -->
@@ -173,6 +173,7 @@
     </style>
 
     <meta name="theme-color" content="#0b0b0f">
+    <meta name="description" content="材料取り 計算 PWA">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="材料PC">
@@ -1344,6 +1345,46 @@
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
+    </script>
+
+    <script>
+        (function () {
+            if (!('serviceWorker' in navigator)) return;
+
+            let refreshing = false;
+
+            navigator.serviceWorker.addEventListener('controllerchange', function () {
+                if (refreshing) return;
+                refreshing = true;
+                window.location.reload();
+            });
+
+            window.addEventListener('load', async function () {
+                try {
+                    const registration = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
+
+                    if (registration.waiting) {
+                        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+                    }
+
+                    registration.addEventListener('updatefound', function () {
+                        const installing = registration.installing;
+                        if (!installing) return;
+                        installing.addEventListener('statechange', function () {
+                            if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+                                installing.postMessage({ type: 'SKIP_WAITING' });
+                            }
+                        });
+                    });
+
+                    if (typeof registration.update === 'function') {
+                        registration.update().catch(function () {});
+                    }
+                } catch (error) {
+                    console.error('Service Worker registration failed:', error);
+                }
+            });
+        })();
     </script>
 </body>
 </html>
