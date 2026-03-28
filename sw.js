@@ -1,4 +1,4 @@
-const CACHE_NAME = 'zairyo-pc-pwa-v3';
+const CACHE_NAME = 'zairyo-pc-pwa-v4';
 const CORE_ASSETS = [
   './',
   './index.html',
