@@ -3,13 +3,7 @@ const CORE_ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
-  './apple-touch-icon.png',
-  './icon-180.png',
-  './icon-192.png',
-  './icon-maskable-192.png',
-  './icon-512.png',
-  './icon-maskable-512.png',
-  './icon-1024.png'
+  './sw.js'
 ];
 
 self.addEventListener('install', (event) => {

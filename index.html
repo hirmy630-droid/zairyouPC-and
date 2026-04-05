@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>材料取り 計算</title>
     <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com/3.4.1"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
     <!-- React & ReactDOM -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -159,7 +159,7 @@
             position: fixed; top: 110px; left: 50%; transform: translateX(-50%);
             background: rgba(255,255,255,0.95); color: #000; padding: 14px 24px;
             border-radius: 999px; font-size: 16px; font-weight: 700;
-            box-shadow: 0 10px 24px rgba(0,0,0,.35); white-space: nowrap; z-index: 1000;
+            box-shadow: 0 10px 24px rgba(0,0,0,0.35); white-space: nowrap; z-index: 1000;
             pointer-events: none; transition: opacity 0.3s ease;
         }
 
@@ -170,22 +170,6 @@
         input[type="checkbox"].ios-checkbox:checked { background-color: #5E5CE6; border-color: #5E5CE6; }
         input[type="checkbox"].ios-checkbox::before { content: ""; width: 0.75rem; height: 0.75rem; transform: scale(0); transition: 120ms transform ease-in-out; box-shadow: inset 1em 1em white; clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%); }
         input[type="checkbox"].ios-checkbox:checked::before { transform: scale(1); }
-
-        /* 屋根・タイトフレーム関連追加スタイル */
-        .count-badge {
-            font-size: 15px;
-            font-weight: 700;
-            padding: 1px 8px;
-            border-radius: 12px;
-            margin-left: 8px;
-            display: inline-flex;
-            align-items: baseline;
-            gap: 1px;
-        }
-        .count-badge-blue { background: rgba(10, 132, 255, 0.25); color: var(--ios-blue); border: 1px solid rgba(10, 132, 255, 0.3); }
-        .count-badge-green { background: rgba(48, 209, 88, 0.25); color: var(--ios-green); border: 1px solid rgba(48, 209, 88, 0.3); }
-        .yane-area { font-size: 15px; font-weight: 500; opacity: 0.7; display: flex; align-items: baseline; }
-
     </style>
 
     <meta name="theme-color" content="#0b0b0f">
@@ -219,8 +203,8 @@
         };
         const excelMod = (n, d) => d === 0 ? 0 : n - d * Math.floor(n / d);
 
-        const APPS = ['calc', 'alloc', 'tightframe', 'kanamono', 'slope', 'area'];
-        const APP_NAMES = { 'calc': '役物', 'alloc': '材料', 'tightframe': '屋根', 'kanamono': '金物', 'slope': '勾配', 'area': '面積' };
+        const APPS = ['calc', 'alloc', 'tightframe', 'kanamono', 'slope'];
+        const APP_NAMES = { 'calc': '役物', 'alloc': '材料', 'tightframe': '屋根', 'kanamono': '金物', 'slope': '勾配' };
 
         const Icon = ({ name, size = 24, className = "" }) => {
             const paths = {
@@ -792,7 +776,7 @@
             const handleFocus = (e) => { if (e && e.target && e.target.select) e.target.select(); };
             const handleEnterKey = (e, nextRef) => { if (e.key === 'Enter') { e.preventDefault(); nextRef.current?.focus(); } };
 
-            const [activeApp, setActiveApp] = useState(() => localStorage.getItem('activeApp') || 'calc');
+            const [activeApp, setActiveApp] = useState(() => { const storedApp = localStorage.getItem('activeApp') || 'calc'; return APPS.includes(storedApp) ? storedApp : 'calc'; });
             const mainRef = useRef(null);
             const calcInputRef = useRef(null);
             const allocCalcInputRef = useRef(null);
@@ -933,43 +917,14 @@
             }, [slopeL1, slopeL2, slopeW, slopePitch]);
 
             const tfResults = useMemo(() => {
-                const size = parseInt(tfSize) || 600; 
-                const L = toNum(tfTotalL); 
-                let yama_pitch = 0, tani_offset = 0;
-                
-                if (size === 600) { yama_pitch = 200; tani_offset = 100; } 
-                else if (size === 500) { yama_pitch = 250; tani_offset = 125; } 
-                else if (size === 1000) { yama_pitch = 500; tani_offset = 250; }
-                
-                if (L <= 0) return { centerL: '', yamaDim: yama_pitch, taniDim: tani_offset, taniZan: '', yamaZan: '', table: [], count: 0, sheetCount: 0, L: 0, commonRemainderSum: 0 };
-                
-                const centerL = L / 2;
-                const taniZan = excelMod(centerL, yama_pitch);
-                const yamaZan = excelMod(centerL - tani_offset, yama_pitch);
-                
-                const totalCount = Math.ceil(L / size);
-                
-                // 屋根材枚数計算: 1000タイプは500mm単位、他はサイズ通り
-                let unitForSheets = (size === 1000) ? 500 : size;
-                let sheetCount = Math.ceil(L / unitForSheets);
-                
-                let table = [];
-                for (let i = 0; i < totalCount; i++) {
-                    const curTani = taniZan + (size * i);
-                    const curYama = yamaZan + (size * i);
-                    table.push({ 
-                        tani: (curTani < L) ? Math.floor(curTani) : null, 
-                        yama: (curYama < L) ? Math.floor(curYama) : null 
-                    });
-                }
-                
-                const commonRemainderSum = L - (size * (totalCount - 1));
-                
-                return { 
-                    centerL, yamaDim: yama_pitch, taniDim: tani_offset, 
-                    taniZan, yamaZan, table, count: totalCount, 
-                    sheetCount, L: L, commonRemainderSum 
-                };
+                const size = parseInt(tfSize) || 600; const L = toNum(tfTotalL); let yamaDim = 0, taniDim = 0, calcSize = size;
+                if (size === 600) { yamaDim = 200; taniDim = 100; calcSize = 600; } else if (size === 500) { yamaDim = 250; taniDim = 125; calcSize = 500; } else if (size === 1000) { yamaDim = 500; taniDim = 250; calcSize = 500; }
+                if (L <= 0) return { centerL: '', yamaDim, taniDim, taniZan: '', yamaZan: '', table: [], count: 0, roofTaniCount: '', roofYamaCount: '', L: 0 };
+                const centerL = L / 2, taniZan = excelMod(centerL, yamaDim), yamaZan = excelMod(centerL - taniDim, yamaDim);
+                let currentTani = taniZan, currentYama = yamaZan, table = [], count = 0;
+                while (currentTani <= L || currentYama <= L) { table.push({ tani: (currentTani <= L && currentTani >= 0) ? currentTani : null, yama: (currentYama <= L && currentYama >= 0) ? currentYama : null }); currentTani += size; currentYama += size; count++; if (count > 1000) break; }
+                const roofTaniCount = Math.ceil((L + taniDim) / calcSize), roofYamaCount = Math.ceil(L / calcSize);
+                return { centerL, yamaDim, taniDim, taniZan, yamaZan, table, count, roofTaniCount, roofYamaCount, L: L };
             }, [tfSize, tfTotalL]);
 
             const addValue = () => {
@@ -1030,7 +985,6 @@
                 const handleStart = (e) => { touchStartX.current = e.touches[0].clientX; touchStartY.current = e.touches[0].clientY; };
                 const handleEnd = (e) => {
                     if (['INPUT', 'BUTTON', 'SELECT', 'CANVAS'].includes(e.target.tagName)) return;
-                    if (activeApp === 'area') return; 
                     const deltaX = touchStartX.current - e.changedTouches[0].clientX;
                     const deltaY = Math.abs(touchStartY.current - e.changedTouches[0].clientY);
                     if (deltaY < 80 && Math.abs(deltaX) > 100) {
@@ -1197,7 +1151,7 @@
                                                     <div className="relative flex items-center">
                                                         <span className="absolute left-4 text-[14px] font-bold text-gray-400 pointer-events-none z-10">備考</span>
                                                         <input ref={allocNoRef} type="text" value={allocNo} onFocus={handleFocus} onChange={(e) => setAllocNo(e.target.value)} className="alloc-input-field relative z-0 !bg-black focus:!bg-[#3a3a3c]" style={{ textAlign: 'center', paddingLeft: '3.5rem', paddingRight: '2.5rem' }} autoComplete="off" placeholder="" />
-                                                        <button ref={allocMemoBtnRef} onClick={(e) => { e.preventDefault(); setIsAllocMemoDropdownOpen(!isAllocMemoDropdownOpen); }} className="absolute right-2 p-2 text-[#ff9f0a] focus:outline-none z-10" tabIndex="-1"><Icon name="chevron" size={20} className={isProductDropdownOpen ? 'rotate-180 transition-transform' : 'transition-transform'} /></button>
+                                                        <button ref={allocMemoBtnRef} onClick={(e) => { e.preventDefault(); setIsAllocMemoDropdownOpen(!isAllocMemoDropdownOpen); }} className="absolute right-2 p-2 text-[#ff9f0a] focus:outline-none z-10" tabIndex="-1"><Icon name="chevron" size={20} className={isAllocMemoDropdownOpen ? 'rotate-180 transition-transform' : 'transition-transform'} /></button>
                                                         {isAllocMemoDropdownOpen && (
                                                             <div ref={allocMemoDropdownRef} className="absolute top-[110%] left-0 w-full bg-[#2c2c2e] border border-[#545458] rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.8)] z-50 overflow-hidden">
                                                                 <ul className="max-h-48 overflow-y-scroll scrollbar-hide">
@@ -1297,94 +1251,20 @@
                                                     <div className="unified-input-row focus-orange flex-1"><span className="unified-label-left w-auto pr-2 whitespace-nowrap">全長</span><input ref={tfTotalLRef} type="text" inputMode="decimal" value={format(tfTotalL)} onFocus={handleFocus} onChange={(e) => setTfTotalL(unformat(e.target.value))} onKeyDown={(e) => {if(e.key==='Enter') e.target.blur()}} className="unified-input-center text-white" placeholder="数値を入力" /></div>
                                                     <button onClick={() => { setTfTotalL(''); setTfSize('600'); }} className="w-24 h-[3rem] btn-3d btn-3d-zinc text-white font-bold text-[13px] shrink-0">リセット</button>
                                                 </div>
-                                                <div className="grid grid-cols-2 gap-3"><div className="flex items-baseline justify-center gap-2 py-2 text-center"><span className="text-[14px] text-gray-500 font-bold uppercase">山ピッチ</span><span className="text-xl font-bold text-gray-300">{format(tfResults.yamaDim)}</span></div><div className="flex items-baseline justify-center gap-2 py-2 text-center"><span className="text-[14px] text-gray-500 font-bold uppercase">谷オフセット</span><span className="text-xl font-bold text-gray-300">{format(tfResults.taniDim)}</span></div></div>
+                                                <div className="grid grid-cols-2 gap-3"><div className="flex items-baseline justify-center gap-2 py-2 text-center"><span className="text-[14px] text-gray-500 font-bold uppercase">山寸法</span><span className="text-xl font-bold text-gray-300">{format(tfResults.yamaDim)}</span></div><div className="flex items-baseline justify-center gap-2 py-2 text-center"><span className="text-[14px] text-gray-500 font-bold uppercase">谷寸法</span><span className="text-xl font-bold text-gray-300">{format(tfResults.taniDim)}</span></div></div>
                                                 <div className="mt-3 rounded-xl overflow-hidden border border-[#38383a] bg-[#000000] flex justify-center py-4 cursor-pointer active:opacity-70 transition-opacity relative" onClick={() => setZoomedImage('tightframe')}><RoofProfileSVG size={tfSize} /></div>
                                             </div>
                                             <div className="space-y-4">
-                                                <h3 className="text-[18px] font-bold text-[#ff9f0a] uppercase tracking-widest ml-1">計算結果</h3>
-                                                <div className="grid grid-cols-1 gap-4">
-                                                    <div className="result-card-ios p-3 shadow-lg flex items-center justify-between" style={{borderLeft: '6px solid #0a84ff', background: '#1c1c1e', borderRadius: '12px'}}>
-                                                        <div className="flex items-center">
-                                                            <div className="result-label-left text-[#0a84ff] min-w-[3.5rem]">谷芯</div>
-                                                            <div className="count-badge count-badge-blue"><span>{tfResults.count || '-'}</span>本</div>
-                                                        </div>
-                                                        <div className="flex items-center">
-                                                            <span className="text-[26px] font-bold text-white">{tfResults.taniZan !== '' ? format(tfResults.taniZan) : '-'}</span><span className="text-[14px] opacity-60 ml-0.5 text-white">㎜</span>
-                                                            <span className="text-[18px] opacity-20 mx-6 text-white">/</span>
-                                                            <div className="yane-area flex items-baseline text-white">
-                                                                <span className="opacity-70">屋根割付 </span><span className="font-bold ml-1 text-[18px]">{tfResults.yamaZan !== '' ? format(tfResults.yamaZan) : '-'}</span><span className="text-[12px] opacity-40 ml-0.5">㎜</span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="result-card-ios p-3 shadow-lg flex items-center justify-between" style={{borderLeft: '6px solid #30d158', background: '#1c1c1e', borderRadius: '12px'}}>
-                                                        <div className="flex items-center">
-                                                            <div className="result-label-left text-[#30d158] min-w-[3.5rem]">山芯</div>
-                                                            <div className="count-badge count-badge-green"><span>{tfResults.count || '-'}</span>本</div>
-                                                        </div>
-                                                        <div className="flex items-center">
-                                                            <span className="text-[26px] font-bold text-white">{tfResults.yamaZan !== '' ? format(tfResults.yamaZan) : '-'}</span><span className="text-[14px] opacity-60 ml-0.5 text-white">㎜</span>
-                                                            <span className="text-[18px] opacity-20 mx-6 text-white">/</span>
-                                                            <div className="yane-area flex items-baseline text-white">
-                                                                <span className="opacity-70">屋根割付 </span><span className="font-bold ml-1 text-[18px]">{tfResults.taniZan !== '' ? format(tfResults.taniZan) : '-'}</span><span className="text-[12px] opacity-40 ml-0.5">㎜</span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
+                                                <h3 className="text-[18px] font-bold text-[#ff9f0a] uppercase tracking-widest ml-1">端部 基準寸法</h3>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className="result-card-ios p-3 shadow-lg" style={{borderLeft: '6px solid #0a84ff', background: '#1c1c1e', borderRadius: '12px'}}><div className="text-[14px] text-[#0a84ff] font-bold uppercase mb-1">谷芯 (タイト)</div><div className="flex items-baseline gap-1 text-white mb-2"><span className="text-3xl font-bold">{tfResults.taniZan !== '' ? format(tfResults.taniZan) : '-'}</span></div><div className="flex items-baseline text-[#0a84ff] mt-2 border-t border-zinc-700 pt-2"><span className="text-[13px] font-bold mr-2">屋根材谷芯:</span><span className="text-2xl font-bold">{tfResults.roofTaniCount !== '' ? format(tfResults.roofTaniCount) : '-'}</span><span className="text-[13px] font-bold ml-1">枚</span></div><div className="text-[12px] text-gray-400 font-bold mt-1">屋根割付: {tfResults.yamaZan !== '' ? format(tfResults.yamaZan) : '-'} ㎜</div></div>
+                                                    <div className="result-card-ios p-3 shadow-lg" style={{borderLeft: '6px solid #30d158', background: '#1c1c1e', borderRadius: '12px'}}><div className="text-[14px] text-[#30d158] font-bold uppercase mb-1">山芯 (タイト)</div><div className="flex items-baseline gap-1 text-white mb-2"><span className="text-3xl font-bold">{tfResults.yamaZan !== '' ? format(tfResults.yamaZan) : '-'}</span></div><div className="flex items-baseline text-[#30d158] mt-2 border-t border-zinc-700 pt-2"><span className="text-[13px] font-bold mr-2">屋根材山芯:</span><span className="text-2xl font-bold">{tfResults.roofYamaCount !== '' ? format(tfResults.roofYamaCount) : '-'}</span><span className="text-[13px] font-bold ml-1">枚</span></div><div className="text-[12px] text-gray-400 font-bold mt-1">屋根割付: {tfResults.taniZan !== '' ? format(tfResults.taniZan) : '-'} ㎜</div></div>
                                                 </div>
                                             </div>
                                         </div>
                                         <div className="space-y-4 pl-1 md:overflow-y-auto scrollbar-hide pb-10">
-                                            <div className="bg-[#1c1c1e] rounded-xl border border-zinc-800 overflow-hidden shadow-2xl animate-fade-in">
-                                                <div className="bg-zinc-800 p-3 flex justify-between items-center border-b border-zinc-700">
-                                                    <h2 className="text-[14px] font-bold text-white uppercase">割付表</h2>
-                                                    <span className="bg-[#ff9f0a] px-3 py-1 rounded text-black font-bold text-[14px] whitespace-nowrap uppercase">
-                                                        全長: {format(tfResults.L)}㎜ / 屋根材 {format(tfResults.sheetCount)}枚
-                                                    </span>
-                                                </div>
-                                                <div className="w-full">
-                                                    <table className="history-table w-full">
-                                                        <thead>
-                                                            <tr className="bg-[#2c2c2e]">
-                                                                <th className="py-2 border-r border-[#444] w-12 text-zinc-500">No.</th>
-                                                                <th className="text-[#0a84ff] border-r border-[#545458] font-bold uppercase py-2">谷芯(mm)</th>
-                                                                <th className="text-[#30d158] font-bold uppercase py-2">山芯(mm)</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="text-center font-bold">
-                                                            {tfResults.table.length === 0 ? (
-                                                                <tr><td colSpan="3" className="py-20 text-zinc-600 italic font-bold text-[14px]">全長を入力してください</td></tr>
-                                                            ) : (
-                                                                tfResults.table.map((row, idx) => (
-                                                                    <tr key={idx} className="border-b border-[#38383a]">
-                                                                        <td className="py-3 border-r border-[#444] text-zinc-500 font-normal text-[14px] w-12">{idx}</td>
-                                                                        <td className="py-3 border-r border-[#545458] text-[#0a84ff] text-[20px]">{row.tani !== null ? format(row.tani) : '-'}</td>
-                                                                        <td className="py-3 text-[#30d158] text-[20px]">{row.yama !== null ? format(row.yama) : '-'}</td>
-                                                                    </tr>
-                                                                ))
-                                                            )}
-                                                        </tbody>
-                                                        <tfoot className="table-foot-row shadow-inner bg-[#111]">
-                                                            <tr className="font-semibold border-t border-[#444]">
-                                                                <td colSpan="3" className="p-0">
-                                                                    <div className="flex divide-x divide-[#444] text-center">
-                                                                        <div className="flex-1 py-3">
-                                                                            <span className="text-[11px] block text-zinc-400 mb-0.5 font-bold uppercase">タイプ</span>
-                                                                            <span className="text-[18px] text-white"><span>{tfSize}</span><span className="text-[12px] ml-0.5 opacity-60">㎜</span></span>
-                                                                        </div>
-                                                                        <div className="flex-1 py-3">
-                                                                            <span className="text-[11px] block text-zinc-400 mb-0.5 font-bold uppercase">本数合計</span>
-                                                                            <span className="text-[18px] text-white"><span>{tfResults.count || '-'}</span><span className="text-[12px] ml-0.5 opacity-60">本</span></span>
-                                                                        </div>
-                                                                        <div className="flex-1 py-3">
-                                                                            <span className="text-[11px] block text-zinc-400 mb-0.5 font-bold uppercase">端数合計</span>
-                                                                            <span className="text-[18px] text-orange-400"><span>{tfResults.L > 0 ? format(tfResults.commonRemainderSum) : '-'}</span><span className="text-[12px] ml-0.5 opacity-60">㎜</span></span>
-                                                                        </div>
-                                                                    </div>
-                                                                </td>
-                                                            </tr>
-                                                        </tfoot>
-                                                    </table>
-                                                </div>
-                                            </div>
+                                            <div className="flex justify-between items-center px-1"><h3 className="text-[18px] font-bold text-zinc-300 uppercase tracking-widest">割付表</h3><div className="bg-[#ff9f0a15] border border-[#ff9f0a44] px-3 py-1 rounded-full text-[#ff9f0a] font-bold text-[14px]">タイト合計: {tfResults.count} 本</div></div>
+                                            <div className="bg-[#1c1c1e] rounded-xl border border-zinc-800 overflow-hidden shadow-2xl animate-fade-in"><div className="bg-zinc-800 p-3 flex justify-between items-center border-b border-zinc-700"><h2 className="text-[14px] font-bold text-white uppercase">タイトフレーム割付</h2><span className="bg-[#f97316] px-3 py-1 rounded-full text-black font-bold text-[14px] whitespace-nowrap uppercase font-bold">W {format(tfResults.L)} ㎜</span></div><div className="w-full"><table className="history-table w-full"><thead className="sticky top-0 bg-[#1c1c1e] z-10"><tr className="bg-[#2c2c2e]"><th className="text-[#0a84ff] border-r border-[#545458] w-1/2 font-bold uppercase py-2">谷芯</th><th className="text-[#30d158] font-bold w-1/2 uppercase py-2">山芯</th></tr></thead><tbody className="text-center font-bold text-lg">{tfResults.table.length === 0 ? <tr><td colSpan="2" className="py-20 text-zinc-600 italic font-bold text-[14px]">全長を入力してください</td></tr> : tfResults.table.map((row, idx) => (<tr key={idx} className="border-b border-[#545458]"><td className="py-3 border-r border-[#545458] text-[#0a84ff] font-bold text-[20px]">{row.tani !== null ? format(row.tani) : '-'}</td><td className="py-3 text-[#30d158] font-bold text-[20px]">{row.yama !== null ? format(row.yama) : '-'}</td></tr>))}</tbody></table></div></div>
                                         </div>
                                     </div>
                                 )}
@@ -1434,7 +1314,6 @@
                                         </div>
                                     </div>
                                 )}
-                                {activeApp === 'area' && ( <AreaApp areaStateRef={areaStateRef} savedData={areaSavedData} setAreaSavedData={setAreaSavedData} showToast={showToast} /> )}
                             </div>
                         </div>
                     </main>
@@ -1464,6 +1343,46 @@
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
+    </script>
+
+    <script>
+        (function () {
+            if (!('serviceWorker' in navigator)) return;
+
+            let refreshing = false;
+
+            navigator.serviceWorker.addEventListener('controllerchange', function () {
+                if (refreshing) return;
+                refreshing = true;
+                window.location.reload();
+            });
+
+            window.addEventListener('load', async function () {
+                try {
+                    const registration = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
+
+                    if (registration.waiting) {
+                        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+                    }
+
+                    registration.addEventListener('updatefound', function () {
+                        const installing = registration.installing;
+                        if (!installing) return;
+                        installing.addEventListener('statechange', function () {
+                            if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+                                installing.postMessage({ type: 'SKIP_WAITING' });
+                            }
+                        });
+                    });
+
+                    if (typeof registration.update === 'function') {
+                        registration.update().catch(function () {});
+                    }
+                } catch (error) {
+                    console.error('Service Worker registration failed:', error);
+                }
+            });
+        })();
     </script>
 </body>
 </html>
